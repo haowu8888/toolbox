@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "mcp__playwright__playwright_get",
+      "Bash(npm install)",
+      "Bash(timeout 3 powershell:*)",
+      "mcp__playwright__playwright_navigate",
+      "mcp__playwright__playwright_screenshot",
+      "mcp__playwright__playwright_click",
+      "mcp__playwright__playwright_press_key",
+      "mcp__playwright__playwright_get_visible_text",
+      "mcp__playwright__playwright_evaluate",
+      "Bash(find:*)",
+      "Bash(npm ls:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(curl:*)",
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(for f in src/components/*.vue)",
+      "Bash(then sed -i \"s/:global\\(\\\\[data-theme=''dark''\\\\]\\) \\\\\\([^:]\\\\\\)/:global\\([data-theme=''dark''] \\\\1\\)/g\" \"$f\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(then sed -i \"s/:global\\(\\\\[data-theme=''dark''\\\\] \\\\\\([^\\)]\\\\\\)\\)/:global\\([data-theme=''dark'']\\) \\\\1/g\" \"$f\")",
+      "Bash(then sed -i \"s/:global\\(\\\\[data-theme=''dark''\\\\]\\) \\\\\\([^: ][^ {,]*\\\\\\)/:global\\([data-theme=''dark''] \\\\1\\)/g\" \"$f\")",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(timeout:*)",
+      "Bash(npx vite:*)",
+      "Bash(ping:*)",
+      "mcp__playwright__playwright_close",
+      "mcp__playwright__playwright_fill"
+    ]
+  }
+}

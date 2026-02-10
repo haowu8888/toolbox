@@ -1,0 +1,220 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color: #333;
+  background: linear-gradient(135deg, #fff9f7 0%, #f0f8ff 50%, #fef5f0 100%);
+  background-attachment: fixed;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='dark'] {
+  color: #e0e0e0;
+  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #0a0a14 100%);
+}
+
+a {
+  font-weight: 500;
+  color: #4ecdc4;
+  text-decoration: inherit;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: #3ab9b0;
+}
+
+:root[data-theme='dark'] a {
+  color: #45b9b0;
+}
+
+:root[data-theme='dark'] a:hover {
+  color: #5ac9c0;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #fff9f7 0%, #f0f8ff 50%, #fef5f0 100%);
+  background-attachment: fixed;
+}
+
+:root[data-theme='dark'] body {
+  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #0a0a14 100%);
+  color: #e0e0e0;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: 2em;
+}
+
+button {
+  border-radius: 8px;
+  border: 2px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 600;
+  font-family: inherit;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme='dark'] button {
+  background-color: #2a3a4a;
+  color: #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme='dark'] button:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+button:focus,
+button:focus-visible {
+  outline: 3px solid rgba(78, 205, 196, 0.3);
+  outline-offset: 2px;
+}
+
+.card {
+  padding: 2em;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme='dark'] .card {
+  background: #1a1a2e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+:root[data-theme='dark'] ::-webkit-scrollbar-track {
+  background: #2a3a4a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #ff5252, #3ab9b0);
+}
+
+/* 深色模式 - 仅设置基础表单元素默认值，组件自行管理各自样式 */
+[data-theme='dark'] input,
+[data-theme='dark'] textarea,
+[data-theme='dark'] select {
+  background-color: #2a3a4a;
+  color: #e0e0e0;
+  border-color: #445566;
+}
+
+[data-theme='dark'] input::placeholder,
+[data-theme='dark'] textarea::placeholder {
+  color: #8ab0d0;
+}
+
+[data-theme='dark'] input:focus,
+[data-theme='dark'] textarea:focus,
+[data-theme='dark'] select:focus {
+  outline: 2px solid #4ecdc4;
+  outline-offset: 1px;
+}
+
+[data-theme='dark'] code {
+  background-color: #2a3a4a;
+  color: #e0e0e0;
+}
+
+[data-theme='dark'] mark {
+  background-color: #3a5a7a;
+  color: #e0e0e0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  :root {
+    font-size: 14px;
+  }
+
+  #app {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 2.2em;
+  }
+
+  h2 {
+    font-size: 1.5em;
+  }
+
+  button {
+    padding: 0.5em 1em;
+    font-size: 0.95em;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    font-size: 13px;
+  }
+
+  #app {
+    padding: 0.5rem;
+  }
+
+  h1 {
+    font-size: 1.8em;
+  }
+
+  h2 {
+    font-size: 1.3em;
+  }
+
+  button {
+    padding: 0.4em 0.8em;
+    font-size: 0.9em;
+  }
+}
+
+
