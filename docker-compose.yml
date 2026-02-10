@@ -1,7 +1,7 @@
 # 直接从 Docker Hub 拉取镜像运行，无需本地构建
 services:
   toolbox:
-    image: your-username/toolbox:latest
+    image: haowu6666/toolbox:latest
     container_name: toolbox
     ports:
       - "8080:80"
