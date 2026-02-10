@@ -1,6 +1,11 @@
 <script setup>
 import { ref, computed } from 'vue'
 import CryptoJS from 'crypto-js'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const inputText = ref('')
 const encryptType = ref('md5')
@@ -25,16 +30,17 @@ const encrypt = () => {
       results.value[key] = fn(inputText.value)
     })
   } catch (err) {
-    alert('加密失败：' + err.message)
+    showToast('加密失败：' + err.message, 'error')
   }
 }
 
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
+    addHistory('文本加密', text)
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

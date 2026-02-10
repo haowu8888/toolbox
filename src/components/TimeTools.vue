@@ -1,5 +1,10 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const currentTime = ref('')
 const timestamp = ref('')
@@ -8,10 +13,14 @@ const selectedDate = ref(new Date().toISOString().split('T')[0])
 const selectedTime = ref('12:00')
 
 // 实时更新当前时间
-setInterval(() => {
+const timer = setInterval(() => {
   const now = new Date()
   currentTime.value = now.toLocaleString('zh-CN')
 }, 1000)
+
+onUnmounted(() => {
+  clearInterval(timer)
+})
 
 const formatDate = (date, format) => {
   const d = new Date(date)
@@ -54,9 +63,10 @@ const getCurrentTimestamp = () => {
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(String(text))
-    alert('已复制！')
+    showToast('已复制')
+    addHistory('时间工具', String(text))
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

@@ -1,5 +1,10 @@
 <script setup>
 import { ref } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const inputJson = ref('')
 const outputJson = ref('')
@@ -35,9 +40,10 @@ const copyToClipboard = async () => {
 
   try {
     await navigator.clipboard.writeText(outputJson.value)
-    alert('已复制到剪贴板！')
+    showToast('已复制到剪贴板')
+    addHistory('JSON 格式化', outputJson.value)
   } catch (err) {
-    alert('复制失败：' + err.message)
+    showToast('复制失败：' + err.message, 'error')
   }
 }
 

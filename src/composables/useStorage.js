@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+
 /**
  * 本地存储工具
  */
@@ -23,41 +25,60 @@ export const useLocalStorage = (key, defaultValue) => {
   return { getValue, setValue }
 }
 
+// 单例响应式状态，确保所有组件共享同一数据
+let _historyRef = null
+let _historyKey = 'toolbox_history'
+let _favoritesRef = null
+let _favoritesKey = 'toolbox_favorites'
+
+function loadFromStorage(key, defaultValue) {
+  try {
+    const item = localStorage.getItem(key)
+    return item ? JSON.parse(item) : defaultValue
+  } catch {
+    return defaultValue
+  }
+}
+
+function saveToStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch (err) {
+    console.error(`Error saving localStorage key "${key}":`, err)
+  }
+}
+
 /**
- * 历史记录管理
+ * 历史记录管理（响应式单例）
  */
 export const useHistory = (key = 'toolbox_history') => {
-  const storage = useLocalStorage(key, [])
+  _historyKey = key
+  if (!_historyRef) {
+    _historyRef = ref(loadFromStorage(key, []))
+  }
 
-  const addHistory = (type, value, timestamp = new Date()) => {
-    const history = storage.getValue()
+  const addHistory = (type, value) => {
     const item = {
       id: Date.now(),
       type,
-      value,
-      timestamp,
+      value: typeof value === 'string' ? value : JSON.stringify(value),
+      timestamp: new Date().toISOString(),
     }
-    history.unshift(item)
-    // 只保留最近 50 条记录
-    if (history.length > 50) {
-      history.pop()
-    }
-    storage.setValue(history)
+    _historyRef.value = [item, ..._historyRef.value.slice(0, 199)]
+    saveToStorage(_historyKey, _historyRef.value)
     return item
   }
 
-  const getHistory = () => {
-    return storage.getValue()
-  }
+  const getHistory = () => _historyRef.value
 
   const clearHistory = () => {
-    storage.setValue([])
+    _historyRef.value = []
+    saveToStorage(_historyKey, [])
   }
 
   const deleteHistoryItem = (id) => {
-    const history = storage.getValue()
-    const filtered = history.filter(item => item.id !== id)
-    storage.setValue(filtered)
+    _historyRef.value = _historyRef.value.filter(item => item.id !== id)
+    saveToStorage(_historyKey, _historyRef.value)
   }
 
   return {
@@ -65,46 +86,46 @@ export const useHistory = (key = 'toolbox_history') => {
     getHistory,
     clearHistory,
     deleteHistoryItem,
+    historyList: _historyRef,
   }
 }
 
 /**
- * 收藏夹管理
+ * 收藏夹管理（响应式单例）
  */
 export const useFavorites = (key = 'toolbox_favorites') => {
-  const storage = useLocalStorage(key, [])
+  _favoritesKey = key
+  if (!_favoritesRef) {
+    _favoritesRef = ref(loadFromStorage(key, []))
+  }
 
   const addFavorite = (type, value, name = '') => {
-    const favorites = storage.getValue()
     const item = {
       id: Date.now(),
       type,
-      value,
-      name: name || value.substring(0, 30),
-      createdAt: new Date(),
+      value: typeof value === 'string' ? value : JSON.stringify(value),
+      name: name || (typeof value === 'string' ? value.substring(0, 30) : ''),
+      createdAt: new Date().toISOString(),
     }
-    favorites.push(item)
-    storage.setValue(favorites)
+    _favoritesRef.value = [..._favoritesRef.value, item]
+    saveToStorage(_favoritesKey, _favoritesRef.value)
     return item
   }
 
-  const getFavorites = () => {
-    return storage.getValue()
-  }
+  const getFavorites = () => _favoritesRef.value
 
   const removeFavorite = (id) => {
-    const favorites = storage.getValue()
-    const filtered = favorites.filter(item => item.id !== id)
-    storage.setValue(filtered)
+    _favoritesRef.value = _favoritesRef.value.filter(item => item.id !== id)
+    saveToStorage(_favoritesKey, _favoritesRef.value)
   }
 
   const clearFavorites = () => {
-    storage.setValue([])
+    _favoritesRef.value = []
+    saveToStorage(_favoritesKey, [])
   }
 
   const isFavorite = (value) => {
-    const favorites = storage.getValue()
-    return favorites.some(item => item.value === value)
+    return _favoritesRef.value.some(item => item.value === value)
   }
 
   return {
@@ -113,5 +134,6 @@ export const useFavorites = (key = 'toolbox_favorites') => {
     removeFavorite,
     clearFavorites,
     isFavorite,
+    favoriteList: _favoritesRef,
   }
 }

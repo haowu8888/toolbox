@@ -1,5 +1,10 @@
 <script setup>
 import { ref } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const inputText = ref('')
 const encodingType = ref('base64')
@@ -50,9 +55,16 @@ const copyToClipboard = async () => {
   if (!output.value) return
   try {
     await navigator.clipboard.writeText(output.value)
-    alert('已复制！')
+    showToast('已复制')
+    const typeNames = {
+      'base64-encode': 'Base64 编码',
+      'base64-decode': 'Base64 解码',
+      'url-encode': 'URL 编码',
+      'url-decode': 'URL 解码',
+    }
+    addHistory(typeNames[encodingType.value] || '编码转换', output.value)
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

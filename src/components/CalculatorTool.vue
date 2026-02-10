@@ -1,5 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const display = ref('0')
 const previousValue = ref(null)
@@ -50,6 +55,7 @@ const handleEquals = () => {
       expression: `${previousValue.value} ${operation.value} ${currentValue}`,
       result: result,
     })
+    addHistory('计算器', `${previousValue.value} ${operation.value} ${currentValue} = ${result}`)
 
     display.value = result.toString()
     previousValue.value = null
@@ -108,9 +114,9 @@ const handleSquareRoot = () => {
 const copyResult = async () => {
   try {
     await navigator.clipboard.writeText(display.value)
-    alert('已复制！')
+    showToast('已复制')
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

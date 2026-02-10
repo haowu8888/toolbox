@@ -1,6 +1,11 @@
 <script setup>
 import { ref } from 'vue'
 import MarkdownIt from 'markdown-it'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const markdown = new MarkdownIt({
   html: true,
@@ -24,7 +29,7 @@ const htmlOutput = () => {
 
 const downloadMarkdown = () => {
   if (!inputMarkdown.value) {
-    alert('请输入 Markdown 内容')
+    showToast('请输入 Markdown 内容', 'info')
     return
   }
   const blob = new Blob([inputMarkdown.value], { type: 'text/markdown' })
@@ -39,7 +44,7 @@ const downloadMarkdown = () => {
 const downloadHtml = () => {
   const html = htmlOutput()
   if (!html) {
-    alert('请输入 Markdown 内容')
+    showToast('请输入 Markdown 内容', 'info')
     return
   }
 
@@ -125,14 +130,15 @@ const downloadHtml = () => {
 const copyHtmlToClipboard = async () => {
   const html = htmlOutput()
   if (!html) {
-    alert('请输入 Markdown 内容')
+    showToast('请输入 Markdown 内容', 'info')
     return
   }
   try {
     await navigator.clipboard.writeText(html)
-    alert('已复制 HTML 代码！')
+    showToast('已复制 HTML 代码')
+    addHistory('Markdown 转 HTML', html)
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

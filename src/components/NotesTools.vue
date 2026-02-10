@@ -1,15 +1,30 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useLocalStorage } from '../composables/useStorage'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
 
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 const storage = useLocalStorage('toolbox_notes', [])
 
 const notes = ref(storage.getValue())
 const newNoteTitle = ref('')
 const newNoteContent = ref('')
+const newNoteTags = ref([])
+const newNotePriority = ref('normal')
 const editingId = ref(null)
+const editTitle = ref('')
+const editContent = ref('')
+const editTags = ref([])
+const editPriority = ref('normal')
 const activeTab = ref('all')
 const searchQuery = ref('')
+const filterTag = ref('')
+const confirmDeleteId = ref(null)
+let confirmTimer = null
+
+const availableTags = ['工作', '学习', '生活', '重要', '待办']
 
 onMounted(() => {
   notes.value = storage.getValue()
@@ -25,6 +40,11 @@ const filteredNotes = computed(() => {
     filtered = filtered.filter(n => !n.isTodo)
   }
 
+  // 按标签筛选
+  if (filterTag.value) {
+    filtered = filtered.filter(n => n.tags && n.tags.includes(filterTag.value))
+  }
+
   // 按搜索查询过滤
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
@@ -34,12 +54,19 @@ const filteredNotes = computed(() => {
     )
   }
 
-  return filtered.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+  return filtered.sort((a, b) => {
+    // 按优先级排序：high > normal > low
+    const priorityOrder = { high: 0, normal: 1, low: 2 }
+    const pa = priorityOrder[a.priority || 'normal'] ?? 1
+    const pb = priorityOrder[b.priority || 'normal'] ?? 1
+    if (pa !== pb) return pa - pb
+    return new Date(b.updatedAt) - new Date(a.updatedAt)
+  })
 })
 
 const addNote = () => {
   if (!newNoteTitle.value.trim()) {
-    alert('请输入标题')
+    showToast('请输入标题', 'info')
     return
   }
 
@@ -49,19 +76,24 @@ const addNote = () => {
     content: newNoteContent.value,
     isTodo: false,
     completed: false,
+    tags: [...newNoteTags.value],
+    priority: newNotePriority.value,
     createdAt: new Date(),
     updatedAt: new Date(),
   }
 
   notes.value.unshift(note)
   storage.setValue(notes.value)
+  addHistory('新建笔记', newNoteTitle.value)
   newNoteTitle.value = ''
   newNoteContent.value = ''
+  newNoteTags.value = []
+  newNotePriority.value = 'normal'
 }
 
 const addTodo = () => {
   if (!newNoteTitle.value.trim()) {
-    alert('请输入任务')
+    showToast('请输入任务', 'info')
     return
   }
 
@@ -71,21 +103,66 @@ const addTodo = () => {
     content: newNoteContent.value,
     isTodo: true,
     completed: false,
+    tags: [...newNoteTags.value],
+    priority: newNotePriority.value,
     createdAt: new Date(),
     updatedAt: new Date(),
   }
 
   notes.value.unshift(note)
   storage.setValue(notes.value)
+  addHistory('新建待办', newNoteTitle.value)
   newNoteTitle.value = ''
   newNoteContent.value = ''
+  newNoteTags.value = []
+  newNotePriority.value = 'normal'
 }
 
-const deleteNote = (id) => {
-  if (confirm('确定删除此笔记吗？')) {
+const requestDelete = (id) => {
+  if (confirmDeleteId.value === id) {
+    // Second click: actually delete
     notes.value = notes.value.filter(n => n.id !== id)
     storage.setValue(notes.value)
+    confirmDeleteId.value = null
+    if (confirmTimer) clearTimeout(confirmTimer)
+  } else {
+    // First click: show confirmation
+    confirmDeleteId.value = id
+    if (confirmTimer) clearTimeout(confirmTimer)
+    confirmTimer = setTimeout(() => {
+      confirmDeleteId.value = null
+    }, 3000)
   }
+}
+
+const startEdit = (note) => {
+  editingId.value = note.id
+  editTitle.value = note.title
+  editContent.value = note.content
+  editTags.value = [...(note.tags || [])]
+  editPriority.value = note.priority || 'normal'
+}
+
+const saveEdit = () => {
+  const note = notes.value.find(n => n.id === editingId.value)
+  if (note) {
+    note.title = editTitle.value
+    note.content = editContent.value
+    note.tags = [...editTags.value]
+    note.priority = editPriority.value
+    note.updatedAt = new Date()
+    storage.setValue(notes.value)
+    showToast('笔记已更新')
+  }
+  cancelEdit()
+}
+
+const cancelEdit = () => {
+  editingId.value = null
+  editTitle.value = ''
+  editContent.value = ''
+  editTags.value = []
+  editPriority.value = 'normal'
 }
 
 const toggleCompleted = (id) => {
@@ -94,6 +171,24 @@ const toggleCompleted = (id) => {
     note.completed = !note.completed
     note.updatedAt = new Date()
     storage.setValue(notes.value)
+  }
+}
+
+const toggleNewTag = (tag) => {
+  const idx = newNoteTags.value.indexOf(tag)
+  if (idx > -1) {
+    newNoteTags.value.splice(idx, 1)
+  } else {
+    newNoteTags.value.push(tag)
+  }
+}
+
+const toggleEditTag = (tag) => {
+  const idx = editTags.value.indexOf(tag)
+  if (idx > -1) {
+    editTags.value.splice(idx, 1)
+  } else {
+    editTags.value.push(tag)
   }
 }
 
@@ -120,18 +215,31 @@ const formatDate = (date) => {
 const copyContent = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 
 const clearAll = () => {
-  if (confirm('确定清空所有笔记吗？')) {
-    notes.value = []
-    storage.setValue([])
-    searchQuery.value = ''
-  }
+  confirmDeleteId.value = 'all'
+  if (confirmTimer) clearTimeout(confirmTimer)
+  confirmTimer = setTimeout(() => {
+    confirmDeleteId.value = null
+  }, 3000)
+}
+
+const confirmClearAll = () => {
+  notes.value = []
+  storage.setValue([])
+  searchQuery.value = ''
+  confirmDeleteId.value = null
+}
+
+const priorityColor = (priority) => {
+  if (priority === 'high') return '#ff6b6b'
+  if (priority === 'low') return '#999'
+  return '#4caf50'
 }
 </script>
 
@@ -154,6 +262,29 @@ const clearAll = () => {
         placeholder="输入内容（可选）"
         class="textarea-field"
       ></textarea>
+
+      <div class="tag-selector">
+        <span class="tag-label">标签：</span>
+        <button
+          v-for="tag in availableTags"
+          :key="tag"
+          :class="['tag-btn', { selected: newNoteTags.includes(tag) }]"
+          @click="toggleNewTag(tag)"
+        >
+          {{ tag }}
+        </button>
+      </div>
+
+      <div class="priority-selector">
+        <span class="priority-label">优先级：</span>
+        <label v-for="p in ['high', 'normal', 'low']" :key="p" class="priority-option">
+          <input type="radio" v-model="newNotePriority" :value="p" />
+          <span :class="['priority-badge', `priority-${p}`]">
+            {{ p === 'high' ? '高' : p === 'normal' ? '普通' : '低' }}
+          </span>
+        </label>
+      </div>
+
       <div class="button-group">
         <button @click="addNote" class="btn btn-primary">➕ 添加笔记</button>
         <button @click="addTodo" class="btn btn-success">✓ 添加任务</button>
@@ -170,15 +301,20 @@ const clearAll = () => {
           @click="activeTab = tab"
         >
           {{ tab === 'all' ? '全部' : tab === 'note' ? '📔 笔记' : '✓ 任务' }}
-          ({{ filteredNotes.filter(n => tab === 'all' || (tab === 'note' ? !n.isTodo : n.isTodo)).length }})
         </button>
       </div>
-      <input
-        v-model="searchQuery"
-        type="text"
-        placeholder="🔍 搜索笔记..."
-        class="search-field"
-      />
+      <div class="filter-row">
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="🔍 搜索笔记..."
+          class="search-field"
+        />
+        <select v-model="filterTag" class="filter-select">
+          <option value="">全部标签</option>
+          <option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option>
+        </select>
+      </div>
     </div>
 
     <!-- 笔记列表 -->
@@ -187,36 +323,84 @@ const clearAll = () => {
         v-for="note in filteredNotes"
         :key="note.id"
         :class="['note-card', { completed: note.completed, todo: note.isTodo }]"
+        :style="{ borderLeftColor: note.isTodo ? priorityColor(note.priority || 'normal') : undefined }"
       >
-        <div class="note-header">
-          <div class="note-title-section">
-            <input
-              v-if="note.isTodo"
-              type="checkbox"
-              :checked="note.completed"
-              @change="toggleCompleted(note.id)"
-              class="todo-checkbox"
-            />
-            <h3 :class="{ completed: note.completed }">{{ note.title }}</h3>
+        <!-- 编辑模式 -->
+        <template v-if="editingId === note.id">
+          <div class="edit-form">
+            <input v-model="editTitle" class="input-field edit-input" placeholder="标题" />
+            <textarea v-model="editContent" class="textarea-field edit-textarea" placeholder="内容"></textarea>
+            <div class="tag-selector">
+              <span class="tag-label">标签：</span>
+              <button
+                v-for="tag in availableTags"
+                :key="tag"
+                :class="['tag-btn', { selected: editTags.includes(tag) }]"
+                @click="toggleEditTag(tag)"
+              >
+                {{ tag }}
+              </button>
+            </div>
+            <div class="priority-selector">
+              <span class="priority-label">优先级：</span>
+              <label v-for="p in ['high', 'normal', 'low']" :key="p" class="priority-option">
+                <input type="radio" v-model="editPriority" :value="p" />
+                <span :class="['priority-badge', `priority-${p}`]">
+                  {{ p === 'high' ? '高' : p === 'normal' ? '普通' : '低' }}
+                </span>
+              </label>
+            </div>
+            <div class="edit-actions">
+              <button @click="saveEdit" class="btn btn-primary">💾 保存</button>
+              <button @click="cancelEdit" class="btn btn-secondary">取消</button>
+            </div>
           </div>
-          <div class="note-actions">
-            <button @click="copyContent(note.title + '\n' + note.content)" class="btn-copy" title="复制">
-              📋
-            </button>
-            <button @click="deleteNote(note.id)" class="btn-delete" title="删除">
-              🗑️
-            </button>
+        </template>
+
+        <!-- 显示模式 -->
+        <template v-else>
+          <div class="note-header">
+            <div class="note-title-section">
+              <input
+                v-if="note.isTodo"
+                type="checkbox"
+                :checked="note.completed"
+                @change="toggleCompleted(note.id)"
+                class="todo-checkbox"
+              />
+              <h3 :class="{ completed: note.completed }">{{ note.title }}</h3>
+            </div>
+            <div class="note-actions">
+              <button @click="startEdit(note)" class="btn-edit" title="编辑">
+                ✏️
+              </button>
+              <button @click="copyContent(note.title + '\n' + note.content)" class="btn-copy" title="复制">
+                📋
+              </button>
+              <button
+                @click="requestDelete(note.id)"
+                :class="['btn-delete', { confirming: confirmDeleteId === note.id }]"
+                :title="confirmDeleteId === note.id ? '再次点击确认删除' : '删除'"
+              >
+                {{ confirmDeleteId === note.id ? '确认？' : '🗑️' }}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div v-if="note.content" class="note-content">
-          {{ note.content }}
-        </div>
+          <div v-if="note.content" class="note-content">
+            {{ note.content }}
+          </div>
 
-        <div class="note-footer">
-          <span class="note-time">{{ formatDate(note.updatedAt) }}</span>
-          <span v-if="note.isTodo && note.completed" class="badge completed">✓ 已完成</span>
-        </div>
+          <div class="note-footer">
+            <div class="footer-left">
+              <span class="note-time">{{ formatDate(note.updatedAt) }}</span>
+              <span v-if="note.isTodo && note.completed" class="badge completed">✓ 已完成</span>
+            </div>
+            <div v-if="note.tags && note.tags.length > 0" class="note-tags">
+              <span v-for="tag in note.tags" :key="tag" class="tag-badge">{{ tag }}</span>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -230,7 +414,20 @@ const clearAll = () => {
 
     <!-- 清空按钮 -->
     <div v-if="notes.length > 0" class="footer-action">
-      <button @click="clearAll" class="btn btn-danger">🗑️ 清空所有</button>
+      <button
+        v-if="confirmDeleteId === 'all'"
+        @click="confirmClearAll"
+        class="btn btn-danger"
+      >
+        ⚠️ 确认清空所有？
+      </button>
+      <button
+        v-else
+        @click="clearAll"
+        class="btn btn-danger"
+      >
+        🗑️ 清空所有
+      </button>
     </div>
   </div>
 </template>
@@ -320,6 +517,120 @@ h3.completed {
   resize: vertical;
 }
 
+.tag-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tag-label,
+.priority-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #555;
+  margin-right: 0.25rem;
+}
+
+:global([data-theme='dark'] .tag-label),
+:global([data-theme='dark'] .priority-label) {
+  color: #a0a0a0;
+}
+
+.tag-btn {
+  padding: 0.25rem 0.6rem;
+  border: 1.5px solid #e0bee7;
+  border-radius: 12px;
+  background: white;
+  color: #666;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+:global([data-theme='dark'] .tag-btn) {
+  background: #2a2a3a;
+  border-color: #4a3a5a;
+  color: #a0a0a0;
+}
+
+.tag-btn.selected {
+  background: #9c27b0;
+  color: white;
+  border-color: #9c27b0;
+}
+
+.tag-btn:hover {
+  border-color: #9c27b0;
+}
+
+.priority-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.priority-option {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.priority-option input[type="radio"] {
+  display: none;
+}
+
+.priority-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1.5px solid transparent;
+  transition: all 0.2s;
+}
+
+.priority-option input[type="radio"]:checked + .priority-badge {
+  box-shadow: 0 0 0 2px rgba(156, 39, 176, 0.3);
+}
+
+.priority-high {
+  background: #ffebee;
+  color: #c62828;
+  border-color: #ef9a9a;
+}
+
+:global([data-theme='dark']) .priority-high {
+  background: #3a1a1a;
+  color: #ff6b6b;
+  border-color: #5a2a2a;
+}
+
+.priority-normal {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-color: #a5d6a7;
+}
+
+:global([data-theme='dark']) .priority-normal {
+  background: #1a3a1a;
+  color: #66bb6a;
+  border-color: #2a5a2a;
+}
+
+.priority-low {
+  background: #f5f5f5;
+  color: #757575;
+  border-color: #e0e0e0;
+}
+
+:global([data-theme='dark']) .priority-low {
+  background: #2a2a2a;
+  color: #999;
+  border-color: #444;
+}
+
 .button-group {
   display: flex;
   gap: 1rem;
@@ -347,6 +658,24 @@ h3.completed {
   background-color: #8b1fa0;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(156, 39, 176, 0.3);
+}
+
+.btn-secondary {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+:global([data-theme='dark'] .btn-secondary) {
+  background-color: #3a3a4a;
+  color: #e0e0e0;
+}
+
+.btn-secondary:hover {
+  background-color: #e0e0e0;
+}
+
+:global([data-theme='dark'] .btn-secondary:hover) {
+  background-color: #4a4a5a;
 }
 
 .btn-success {
@@ -414,7 +743,13 @@ h3.completed {
   box-shadow: 0 4px 12px rgba(156, 39, 176, 0.3);
 }
 
+.filter-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
 .search-field {
+  flex: 1;
   padding: 0.75rem 1rem;
   border: 2px solid #e0bee7;
   border-radius: 8px;
@@ -434,6 +769,22 @@ h3.completed {
   outline: none;
   border-color: #9c27b0;
   box-shadow: 0 0 0 3px rgba(156, 39, 176, 0.1);
+}
+
+.filter-select {
+  padding: 0.75rem;
+  border: 2px solid #e0bee7;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+}
+
+:global([data-theme='dark'] .filter-select) {
+  background-color: #1a1a2e;
+  border-color: #4a3a5a;
+  color: #e0e0e0;
 }
 
 .notes-list {
@@ -515,7 +866,8 @@ h3.completed {
 }
 
 .btn-copy,
-.btn-delete {
+.btn-delete,
+.btn-edit {
   padding: 0.4rem 0.6rem;
   border: 1px solid #e0bee7;
   background-color: white;
@@ -526,9 +878,19 @@ h3.completed {
 }
 
 :global([data-theme='dark'] .btn-copy),
-:global([data-theme='dark'] .btn-delete) {
+:global([data-theme='dark'] .btn-delete),
+:global([data-theme='dark'] .btn-edit) {
   background-color: #2a2a3a;
   border-color: #4a3a5a;
+}
+
+.btn-edit:hover {
+  background-color: #f3e5f5;
+  border-color: #9c27b0;
+}
+
+:global([data-theme='dark'] .btn-edit:hover) {
+  background-color: #3a2a4a;
 }
 
 .btn-copy:hover {
@@ -547,6 +909,14 @@ h3.completed {
 
 :global([data-theme='dark'] .btn-delete:hover) {
   background-color: #3a2a2a;
+}
+
+.btn-delete.confirming {
+  background-color: #ff6b6b;
+  color: white;
+  border-color: #ff6b6b;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .note-content {
@@ -571,10 +941,18 @@ h3.completed {
   padding-top: 0.75rem;
   border-top: 1px solid #e0bee7;
   font-size: 0.85rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 :global([data-theme='dark'] .note-footer) {
   border-top-color: #4a3a5a;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .note-time {
@@ -592,6 +970,53 @@ h3.completed {
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+.note-tags {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.tag-badge {
+  padding: 0.15rem 0.5rem;
+  background: #f3e5f5;
+  color: #9c27b0;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+:global([data-theme='dark'] .tag-badge) {
+  background: #3a2a4a;
+  color: #ce93d8;
+}
+
+/* Edit form styles */
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.edit-input {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.edit-textarea {
+  min-height: 80px;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.edit-actions .btn {
+  flex: 1;
+  min-width: auto;
+  padding: 0.5rem 1rem;
 }
 
 .empty-state {
@@ -638,6 +1063,10 @@ h3.completed {
 
   .notes-list {
     grid-template-columns: 1fr;
+  }
+
+  .filter-row {
+    flex-direction: column;
   }
 }
 

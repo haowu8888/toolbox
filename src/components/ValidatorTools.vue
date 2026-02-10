@@ -1,5 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const inputValue = ref('')
 const validationType = ref('email')
@@ -57,9 +62,12 @@ const validate = () => {
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
+    if (validationResult.value) {
+      addHistory('数据验证', `${validationResult.value.type}: ${text} → ${validationResult.value.isValid ? '通过' : '不通过'}`)
+    }
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

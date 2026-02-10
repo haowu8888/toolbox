@@ -1,12 +1,18 @@
 <script setup>
 import { ref } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const pattern = ref('')
-const flags = ref('g')
+const flags = ref(['g'])
 const testText = ref('')
 const output = ref('')
 const error = ref('')
 const matches = ref([])
+const replaceText = ref('')
 
 const testRegex = () => {
   if (!pattern.value.trim() || !testText.value.trim()) {
@@ -18,7 +24,7 @@ const testRegex = () => {
 
   try {
     error.value = ''
-    const regex = new RegExp(pattern.value, flags.value)
+    const regex = new RegExp(pattern.value, flags.value.join(''))
     const allMatches = testText.value.match(regex)
 
     if (allMatches) {
@@ -37,19 +43,17 @@ const testRegex = () => {
 
 const replace = () => {
   if (!pattern.value.trim() || !testText.value.trim()) {
-    alert('请输入正则表达式和要替换的文本')
+    showToast('请输入正则表达式和要替换的文本', 'info')
     return
   }
 
   try {
-    const replaceText = prompt('请输入替换内容：')
-    if (replaceText !== null) {
-      error.value = ''
-      const regex = new RegExp(pattern.value, flags.value)
-      const result = testText.value.replace(regex, replaceText)
-      output.value = result
-      copyToClipboard(result)
-    }
+    error.value = ''
+    const regex = new RegExp(pattern.value, flags.value.join(''))
+    const result = testText.value.replace(regex, replaceText.value)
+    output.value = result
+    addHistory('正则替换', result)
+    copyToClipboard(result)
   } catch (err) {
     error.value = '替换失败：' + err.message
     output.value = ''
@@ -62,7 +66,8 @@ const highlightMatches = () => {
   }
 
   try {
-    const regex = new RegExp(`(${pattern.value})`, flags.value.includes('g') ? 'gi' : 'i')
+    const flagStr = flags.value.join('')
+    const regex = new RegExp(`(${pattern.value})`, flagStr.includes('g') ? 'gi' : 'i')
     const result = testText.value.replace(regex, '<mark>$1</mark>')
     output.value = result
   } catch (err) {
@@ -73,9 +78,10 @@ const highlightMatches = () => {
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
+    addHistory('正则工具', text)
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 
@@ -85,6 +91,7 @@ const clearAll = () => {
   output.value = ''
   error.value = ''
   matches.value = []
+  replaceText.value = ''
 }
 </script>
 
@@ -145,6 +152,15 @@ const clearAll = () => {
           placeholder="输入要测试的文本"
           class="input-textarea"
         ></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>替换内容</label>
+        <input
+          v-model="replaceText"
+          placeholder="输入替换文本（点击替换按钮执行）"
+          class="regex-input"
+        />
       </div>
     </div>
 

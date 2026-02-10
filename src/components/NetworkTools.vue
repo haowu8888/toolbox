@@ -1,5 +1,10 @@
 <script setup>
 import { ref } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const activeTab = ref('url-encode')
 const urlInput = ref('')
@@ -8,11 +13,13 @@ const urlOutput = ref('')
 // URL 编码/解码
 const encodeUrl = () => {
   urlOutput.value = encodeURIComponent(urlInput.value)
+  addHistory('URL 编码', urlOutput.value)
 }
 
 const decodeUrl = () => {
   try {
     urlOutput.value = decodeURIComponent(urlInput.value)
+    addHistory('URL 解码', urlOutput.value)
   } catch (err) {
     urlOutput.value = '解码失败：' + err.message
   }
@@ -61,6 +68,7 @@ const analyzeUrl = () => {
 哈希值: ${url.hash || '无'}
 完整URL: ${url.href}
     `.trim()
+    addHistory('网址分析', analyzeResult.value)
   } catch (err) {
     analyzeResult.value = '错误：无效的URL'
   }
@@ -89,9 +97,9 @@ const decodeBase64 = () => {
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 

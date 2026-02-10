@@ -1,5 +1,10 @@
 <script setup>
 import { ref } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const inputCode = ref('')
 const codeType = ref('json')
@@ -121,6 +126,7 @@ const format = () => {
     } else if (codeType.value === 'xml') {
       output.value = formatXML(inputCode.value)
     }
+    addHistory('代码格式化', output.value)
   } catch (err) {
     output.value = '格式化错误：' + err.message
   }
@@ -129,9 +135,9 @@ const format = () => {
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 
@@ -143,6 +149,7 @@ const minify = () => {
     } else {
       output.value = inputCode.value.replace(/\s+/g, ' ').trim()
     }
+    addHistory('代码压缩', output.value)
   } catch (err) {
     output.value = '压缩失败：' + err.message
   }

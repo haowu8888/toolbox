@@ -1,6 +1,9 @@
 <script setup>
 import { ref, watch } from 'vue'
 import QRCode from 'qrcode'
+import { useHistory } from '../composables/useStorage'
+
+const { addHistory } = useHistory()
 
 const inputValue = ref('')
 const qrCodeUrl = ref('')
@@ -35,6 +38,7 @@ const downloadQRCode = () => {
   link.href = qrCodeUrl.value
   link.download = 'qrcode.png'
   link.click()
+  addHistory('二维码生成', inputValue.value)
 }
 
 const clearInput = () => {

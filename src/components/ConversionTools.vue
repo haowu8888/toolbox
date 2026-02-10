@@ -1,5 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const activeTab = ref('length')
 
@@ -67,12 +72,13 @@ const convertBase = () => {
   }
 }
 
-const copyToClipboard = async (text) => {
+const copyToClipboard = async (text, label) => {
   try {
     await navigator.clipboard.writeText(String(text))
-    alert('已复制！')
+    showToast('已复制')
+    if (label) addHistory('单位转换', `${label}: ${text}`)
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 
@@ -161,7 +167,7 @@ const convertVolume = () => {
               {{ unit.name }}
             </option>
           </select>
-          <button @click="copyToClipboard(convertLength())" class="btn-copy">📋</button>
+          <button @click="copyToClipboard(convertLength(), '长度转换')" class="btn-copy">📋</button>
         </div>
       </div>
     </div>
@@ -189,7 +195,7 @@ const convertVolume = () => {
               {{ unit.name }}
             </option>
           </select>
-          <button @click="copyToClipboard(convertWeight())" class="btn-copy">📋</button>
+          <button @click="copyToClipboard(convertWeight(), '重量转换')" class="btn-copy">📋</button>
         </div>
       </div>
     </div>
@@ -217,7 +223,7 @@ const convertVolume = () => {
               {{ unit.name }}
             </option>
           </select>
-          <button @click="copyToClipboard(convertVolume())" class="btn-copy">📋</button>
+          <button @click="copyToClipboard(convertVolume(), '体积转换')" class="btn-copy">📋</button>
         </div>
       </div>
     </div>
@@ -245,7 +251,7 @@ const convertVolume = () => {
             <option value="F">华氏度 (°F)</option>
             <option value="K">开尔文 (K)</option>
           </select>
-          <button @click="copyToClipboard(convertTemp())" class="btn-copy">📋</button>
+          <button @click="copyToClipboard(convertTemp(), '温度转换')" class="btn-copy">📋</button>
         </div>
       </div>
     </div>
@@ -275,7 +281,7 @@ const convertVolume = () => {
             <option value="10">十进制 (Decimal)</option>
             <option value="16">十六进制 (Hex)</option>
           </select>
-          <button @click="copyToClipboard(convertBase())" class="btn-copy">📋</button>
+          <button @click="copyToClipboard(convertBase(), '进制转换')" class="btn-copy">📋</button>
         </div>
       </div>
     </div>

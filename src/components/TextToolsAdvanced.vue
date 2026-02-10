@@ -1,5 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const inputText = ref('')
 const operation = ref('uuid')
@@ -44,6 +49,19 @@ const generatePassword = () => {
   }
   return password
 }
+
+// 存储生成的密码
+const generatedPassword = ref('')
+let passwordInitialized = false
+
+const refreshPassword = () => {
+  generatedPassword.value = generatePassword()
+  if (passwordInitialized) addHistory('密码生成', generatedPassword.value)
+  passwordInitialized = true
+}
+
+// 初始化生成一次密码
+refreshPassword()
 
 // 字数统计
 const charCount = computed(() => inputText.value.length)
@@ -110,20 +128,22 @@ const executeOperation = () => {
   } else if (operation.value === 'removeDuplicates') {
     output.value = removeDuplicates()
   }
+  if (output.value) addHistory('文本处理', output.value)
 }
 
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 
 const copyAllUUIDs = async () => {
   const text = uuidList.value.join('\n')
   await copyToClipboard(text)
+  addHistory('UUID 生成', text)
 }
 
 const clearAll = () => {
@@ -189,8 +209,9 @@ const clearAll = () => {
         </label>
       </div>
       <div class="password-display">
-        <div class="password-value">{{ generatePassword() }}</div>
-        <button @click="copyToClipboard(generatePassword())" class="btn btn-primary">📋 复制密码</button>
+        <div class="password-value">{{ generatedPassword }}</div>
+        <button @click="refreshPassword" class="btn btn-secondary">🔄 刷新</button>
+        <button @click="copyToClipboard(generatedPassword)" class="btn btn-primary">📋 复制密码</button>
       </div>
     </div>
 

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useTheme } from './composables/useTheme'
 import CommandPalette from './components/CommandPalette.vue'
+import ToastNotification from './components/ToastNotification.vue'
 import QRCodeGenerator from './components/QRCodeGenerator.vue'
 import JsonFormatter from './components/JsonFormatter.vue'
 import TextEncryption from './components/TextEncryption.vue'
@@ -20,14 +21,41 @@ import TextToolsAdvanced from './components/TextToolsAdvanced.vue'
 import CalculatorTool from './components/CalculatorTool.vue'
 import CodeFormatterTools from './components/CodeFormatterTools.vue'
 import FileConverterTools from './components/FileConverterTools.vue'
+import JwtDecoder from './components/JwtDecoder.vue'
 
 const { initTheme, isDark, toggleTheme } = useTheme()
 
+const activeTab = ref('qrcode')
+
+// Hash routing
+const toolIds = new Set()
+
+const syncHashToTab = () => {
+  const hash = window.location.hash.replace('#tool-', '')
+  if (hash && toolIds.has(hash)) {
+    activeTab.value = hash
+  }
+}
+
+const onHashChange = () => {
+  syncHashToTab()
+}
+
 onMounted(() => {
   initTheme()
+  // Populate toolIds after tools array is ready
+  tools.forEach(t => toolIds.add(t.id))
+  syncHashToTab()
+  window.addEventListener('hashchange', onHashChange)
 })
 
-const activeTab = ref('qrcode')
+onUnmounted(() => {
+  window.removeEventListener('hashchange', onHashChange)
+})
+
+watch(activeTab, (newTab) => {
+  window.location.hash = `#tool-${newTab}`
+})
 const hoveredCategory = ref(null)
 const expandedCategories = ref({
   '基础工具': true,
@@ -56,13 +84,14 @@ const tools = [
   { id: 'calculator', name: '计算器', icon: '🧮', color: '#2196f3' },
   { id: 'codeformatter', name: '代码工具', icon: '💻', color: '#9c27b0' },
   { id: 'fileconverter', name: '文件转换', icon: '🔄', color: '#4ecdc4' },
+  { id: 'jwt', name: 'JWT 解码', icon: '🔑', color: '#ff6b6b' },
   { id: 'storage', name: '历史/收藏', icon: '📚', color: '#4ecdc4' },
   { id: 'settings', name: '设置', icon: '⚙️', color: '#4ecdc4' },
 ]
 
 const categoryGroups = [
   { category: '基础工具', ids: ['qrcode', 'json'] },
-  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex'] },
+  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex', 'jwt'] },
   { category: '内容处理', ids: ['markdown'] },
   { category: '数据转换', ids: ['time', 'convert', 'color'] },
   { category: '验证工具', ids: ['validator', 'network'] },
@@ -112,6 +141,9 @@ const handleCommandSelect = (toolId) => {
 
 <template>
   <div id="app">
+    <!-- Toast 通知 -->
+    <ToastNotification />
+
     <!-- 快捷搜索面板 -->
     <CommandPalette @select="handleCommandSelect" />
 
@@ -222,6 +254,10 @@ const handleCommandSelect = (toolId) => {
         <FileConverterTools />
       </div>
 
+      <div v-show="activeTab === 'jwt'" class="tool-panel">
+        <JwtDecoder />
+      </div>
+
       <div v-show="activeTab === 'storage'" class="tool-panel">
         <StoragePanel />
       </div>
@@ -232,7 +268,7 @@ const handleCommandSelect = (toolId) => {
     </main>
 
     <footer class="footer">
-      <p>© 2025 工具箱 | Made with ❤️ for developers | 18 工具 | 完全隐私 | 离线可用</p>
+      <p>© 2025 工具箱 | Made with ❤️ for developers | 19 工具 | 完全隐私 | 离线可用</p>
     </footer>
   </div>
 </template>

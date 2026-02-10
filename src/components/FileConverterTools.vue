@@ -1,5 +1,11 @@
 <script setup>
 import { ref } from 'vue'
+import CryptoJS from 'crypto-js'
+import { useToast } from '../composables/useToast'
+import { useHistory } from '../composables/useStorage'
+
+const { showToast } = useToast()
+const { addHistory } = useHistory()
 
 const toolType = ref('image-base64')
 const imageInput = ref('')
@@ -7,18 +13,6 @@ const imagePreview = ref('')
 const base64Input = ref('')
 const fileInput = ref(null)
 const hashResult = ref('')
-const hashType = ref('md5')
-
-// 简单 MD5（注：实际应用应使用库）
-const simpleHash = (str) => {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = (hash << 5) - hash + char
-    hash = hash & hash // 转换为32位整数
-  }
-  return Math.abs(hash).toString(16)
-}
 
 // 图片转 Base64
 const handleImageSelect = (e) => {
@@ -26,7 +20,7 @@ const handleImageSelect = (e) => {
   if (!file) return
 
   if (!file.type.startsWith('image/')) {
-    alert('请选择图片文件')
+    showToast('请选择图片文件', 'error')
     return
   }
 
@@ -41,7 +35,7 @@ const handleImageSelect = (e) => {
 // Base64 转图片
 const displayBase64Image = () => {
   if (!base64Input.value.trim().startsWith('data:image')) {
-    alert('请输入有效的 Base64 图片数据（应以 data:image 开头）')
+    showToast('请输入有效的 Base64 图片数据（应以 data:image 开头）', 'error')
     return
   }
   imagePreview.value = base64Input.value
@@ -50,15 +44,16 @@ const displayBase64Image = () => {
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    alert('已复制！')
+    showToast('已复制')
+    addHistory('文件工具', text.length > 100 ? text.substring(0, 100) + '...' : text)
   } catch (err) {
-    alert('复制失败')
+    showToast('复制失败', 'error')
   }
 }
 
 const downloadBase64Image = () => {
   if (!imageInput.value) {
-    alert('请先选择或输入图片')
+    showToast('请先选择或输入图片', 'info')
     return
   }
 
@@ -70,7 +65,7 @@ const downloadBase64Image = () => {
 
 const downloadImageAsBase64 = () => {
   if (!imagePreview.value) {
-    alert('请先转换图片')
+    showToast('请先转换图片', 'info')
     return
   }
 
@@ -90,20 +85,22 @@ const handleFileSelect = (e) => {
 
   const reader = new FileReader()
   reader.onload = (event) => {
-    const content = event.target?.result || ''
-    // 简单的文本哈希（实际应用应使用crypto库）
-    const hash = simpleHash(content)
+    const arrayBuffer = event.target?.result
+    if (!arrayBuffer) return
+    const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer)
+    const md5 = CryptoJS.MD5(wordArray).toString()
+    const sha256 = CryptoJS.SHA256(wordArray).toString()
     hashResult.value = `
 文件: ${file.name}
 类型: ${file.type || '未知'}
 大小: ${(file.size / 1024).toFixed(2)} KB
-哈希值 (简单): ${hash}
 
-注: 这是简单的哈希演示。
-实际使用应该使用专业的密码库如 crypto-js。
+MD5:    ${md5}
+SHA-256: ${sha256}
     `.trim()
+    addHistory('文件哈希', `${file.name} MD5: ${md5}`)
   }
-  reader.readAsText(file, 'UTF-8')
+  reader.readAsArrayBuffer(file)
 }
 
 const clearAll = () => {
