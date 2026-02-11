@@ -29,6 +29,7 @@ const presetTemplates = [
 
 // ===== Custom Templates =====
 const customTemplates = ref([])
+const newTemplatesCount = ref(0)
 const showTemplateModal = ref(false)
 const newTemplateName = ref('')
 const newTemplateItems = ref('')
@@ -61,6 +62,7 @@ const addCustomTemplate = () => {
   newTemplateItems.value = ''
   showTemplateModal.value = false
   showToast('模板已保存')
+  newTemplatesCount.value++
 }
 
 const deleteCustomTemplate = (id) => {
@@ -170,6 +172,7 @@ const weightPercentage = (item) => {
 
 // ===== Records =====
 const records = ref([])
+const newRecordsCount = ref(0)
 
 const loadRecords = () => {
   try {
@@ -196,6 +199,7 @@ const addRecord = (mode, items, results) => {
   })
   if (records.value.length > 100) records.value = records.value.slice(0, 100)
   saveRecords()
+  newRecordsCount.value++
 }
 
 const clearRecords = () => {
@@ -742,6 +746,8 @@ watch(() => weightedItems.value.map(i => `${i.name}:${i.weight}`).join(','), () 
 watch(activeTab, (tab) => {
   if (tab === 'quick') scheduleRedraw('quick')
   if (tab === 'advanced') scheduleRedraw('advanced')
+  if (tab === 'records') newRecordsCount.value = 0
+  if (tab === 'templates') newTemplatesCount.value = 0
 })
 
 // ===== Lifecycle =====
@@ -777,11 +783,11 @@ onUnmounted(() => {
       </button>
       <button :class="['tab-btn', { active: activeTab === 'templates' }]" @click="activeTab = 'templates'">
         <span class="tab-icon">📋</span> 模板管理
-        <span v-if="customTemplates.length" class="badge tpl-badge">{{ customTemplates.length }}</span>
+        <span v-if="newTemplatesCount > 0" class="badge tpl-badge">{{ newTemplatesCount }}</span>
       </button>
       <button :class="['tab-btn', { active: activeTab === 'records' }]" @click="activeTab = 'records'">
         <span class="tab-icon">📊</span> 抽奖记录
-        <span v-if="records.length" class="badge">{{ records.length }}</span>
+        <span v-if="newRecordsCount > 0" class="badge">{{ newRecordsCount }}</span>
       </button>
     </div>
 
