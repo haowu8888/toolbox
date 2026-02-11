@@ -1,7 +1,11 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, defineProps } from 'vue'
 import { useTheme } from '../composables/useTheme'
 import { useConfig } from '../composables/useConfig'
+
+const props = defineProps({
+  toolCount: { type: Number, default: 0 }
+})
 
 const { theme, toggleTheme, isDark } = useTheme()
 const { downloadConfig, importConfig, clearAllData, getDataStats } = useConfig()
@@ -191,7 +195,7 @@ const getStoragePercent = () => {
         </div>
         <div class="about-item">
           <span class="label">工具数量：</span>
-          <span class="value">18 个</span>
+          <span class="value">{{ props.toolCount }} 个</span>
         </div>
         <div class="about-item">
           <span class="label">构建技术：</span>

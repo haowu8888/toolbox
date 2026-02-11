@@ -8,7 +8,7 @@ const { showToast } = useToast()
 const { addHistory } = useHistory()
 
 const markdown = new MarkdownIt({
-  html: true,
+  html: false,
   linkify: true,
   typographer: true,
 })

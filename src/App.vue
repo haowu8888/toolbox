@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, markRaw } from 'vue'
 import { useTheme } from './composables/useTheme'
 import CommandPalette from './components/CommandPalette.vue'
 import ToastNotification from './components/ToastNotification.vue'
@@ -22,6 +22,13 @@ import CalculatorTool from './components/CalculatorTool.vue'
 import CodeFormatterTools from './components/CodeFormatterTools.vue'
 import FileConverterTools from './components/FileConverterTools.vue'
 import JwtDecoder from './components/JwtDecoder.vue'
+import CronParser from './components/CronParser.vue'
+import DiffTool from './components/DiffTool.vue'
+import DataGenerator from './components/DataGenerator.vue'
+import CssUnitConverter from './components/CssUnitConverter.vue'
+import ImageCompressor from './components/ImageCompressor.vue'
+import HtmlEntityConverter from './components/HtmlEntityConverter.vue'
+import LotteryTool from './components/LotteryTool.vue'
 
 const { initTheme, isDark, toggleTheme } = useTheme()
 
@@ -85,19 +92,61 @@ const tools = [
   { id: 'codeformatter', name: '代码工具', icon: '💻', color: '#9c27b0' },
   { id: 'fileconverter', name: '文件转换', icon: '🔄', color: '#4ecdc4' },
   { id: 'jwt', name: 'JWT 解码', icon: '🔑', color: '#ff6b6b' },
+  { id: 'cron', name: 'Cron解析', icon: '⏱️', color: '#e91e63' },
+  { id: 'diff', name: '文本对比', icon: '📄', color: '#00bcd4' },
+  { id: 'datagen', name: '数据生成', icon: '🎲', color: '#ff9800' },
+  { id: 'cssunit', name: 'CSS单位', icon: '📐', color: '#607d8b' },
+  { id: 'imgcompress', name: '图片压缩', icon: '🖼️', color: '#8bc34a' },
+  { id: 'htmlentity', name: 'HTML实体', icon: '🔣', color: '#795548' },
+  { id: 'lottery', name: '抽奖工具', icon: '🎰', color: '#e91e63' },
   { id: 'storage', name: '历史/收藏', icon: '📚', color: '#4ecdc4' },
   { id: 'settings', name: '设置', icon: '⚙️', color: '#4ecdc4' },
 ]
 
 const categoryGroups = [
   { category: '基础工具', ids: ['qrcode', 'json'] },
-  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex', 'jwt'] },
-  { category: '内容处理', ids: ['markdown'] },
-  { category: '数据转换', ids: ['time', 'convert', 'color'] },
-  { category: '验证工具', ids: ['validator', 'network'] },
-  { category: '高级工具', ids: ['textadvanced', 'calculator', 'codeformatter', 'fileconverter'] },
+  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex', 'jwt', 'htmlentity'] },
+  { category: '内容处理', ids: ['markdown', 'diff'] },
+  { category: '数据转换', ids: ['time', 'convert', 'color', 'cssunit'] },
+  { category: '验证工具', ids: ['validator', 'network', 'cron'] },
+  { category: '高级工具', ids: ['textadvanced', 'calculator', 'codeformatter', 'fileconverter', 'datagen', 'imgcompress', 'lottery'] },
   { category: '数据管理', ids: ['notes', 'storage', 'settings'] },
 ]
+
+const toolComponentMap = {
+  qrcode: markRaw(QRCodeGenerator),
+  json: markRaw(JsonFormatter),
+  encrypt: markRaw(TextEncryption),
+  encoding: markRaw(EncodingTools),
+  regex: markRaw(RegexTools),
+  markdown: markRaw(MarkdownTools),
+  time: markRaw(TimeTools),
+  convert: markRaw(ConversionTools),
+  color: markRaw(ColorTools),
+  validator: markRaw(ValidatorTools),
+  network: markRaw(NetworkTools),
+  notes: markRaw(NotesTools),
+  textadvanced: markRaw(TextToolsAdvanced),
+  calculator: markRaw(CalculatorTool),
+  codeformatter: markRaw(CodeFormatterTools),
+  fileconverter: markRaw(FileConverterTools),
+  jwt: markRaw(JwtDecoder),
+  cron: markRaw(CronParser),
+  diff: markRaw(DiffTool),
+  datagen: markRaw(DataGenerator),
+  cssunit: markRaw(CssUnitConverter),
+  imgcompress: markRaw(ImageCompressor),
+  htmlentity: markRaw(HtmlEntityConverter),
+  lottery: markRaw(LotteryTool),
+  storage: markRaw(StoragePanel),
+  settings: markRaw(SettingsPanel),
+}
+
+const currentComponent = computed(() => toolComponentMap[activeTab.value])
+const currentComponentProps = computed(() => {
+  if (activeTab.value === 'settings') return { toolCount: tools.length }
+  return {}
+})
 
 const toggleCategory = (category) => {
   // 如果点击的菜单已展开，则关闭它
@@ -190,85 +239,15 @@ const handleCommandSelect = (toolId) => {
     </nav>
 
     <main class="content">
-      <div v-show="activeTab === 'qrcode'" class="tool-panel">
-        <QRCodeGenerator />
-      </div>
-
-      <div v-show="activeTab === 'json'" class="tool-panel">
-        <JsonFormatter />
-      </div>
-
-      <div v-show="activeTab === 'encrypt'" class="tool-panel">
-        <TextEncryption />
-      </div>
-
-      <div v-show="activeTab === 'encoding'" class="tool-panel">
-        <EncodingTools />
-      </div>
-
-      <div v-show="activeTab === 'regex'" class="tool-panel">
-        <RegexTools />
-      </div>
-
-      <div v-show="activeTab === 'markdown'" class="tool-panel">
-        <MarkdownTools />
-      </div>
-
-      <div v-show="activeTab === 'time'" class="tool-panel">
-        <TimeTools />
-      </div>
-
-      <div v-show="activeTab === 'convert'" class="tool-panel">
-        <ConversionTools />
-      </div>
-
-      <div v-show="activeTab === 'color'" class="tool-panel">
-        <ColorTools />
-      </div>
-
-      <div v-show="activeTab === 'validator'" class="tool-panel">
-        <ValidatorTools />
-      </div>
-
-      <div v-show="activeTab === 'network'" class="tool-panel">
-        <NetworkTools />
-      </div>
-
-      <div v-show="activeTab === 'notes'" class="tool-panel">
-        <NotesTools />
-      </div>
-
-      <div v-show="activeTab === 'textadvanced'" class="tool-panel">
-        <TextToolsAdvanced />
-      </div>
-
-      <div v-show="activeTab === 'calculator'" class="tool-panel">
-        <CalculatorTool />
-      </div>
-
-      <div v-show="activeTab === 'codeformatter'" class="tool-panel">
-        <CodeFormatterTools />
-      </div>
-
-      <div v-show="activeTab === 'fileconverter'" class="tool-panel">
-        <FileConverterTools />
-      </div>
-
-      <div v-show="activeTab === 'jwt'" class="tool-panel">
-        <JwtDecoder />
-      </div>
-
-      <div v-show="activeTab === 'storage'" class="tool-panel">
-        <StoragePanel />
-      </div>
-
-      <div v-show="activeTab === 'settings'" class="tool-panel">
-        <SettingsPanel />
+      <div class="tool-panel">
+        <KeepAlive :max="10">
+          <component :is="currentComponent" :key="activeTab" v-bind="currentComponentProps" />
+        </KeepAlive>
       </div>
     </main>
 
     <footer class="footer">
-      <p>© 2025 工具箱 | Made with ❤️ for developers | 19 工具 | 完全隐私 | 离线可用</p>
+      <p>© 2025 工具箱 | Made with ❤️ for developers | {{ tools.length }} 工具 | 完全隐私 | 离线可用</p>
     </footer>
   </div>
 </template>

@@ -11,12 +11,12 @@ const operation = ref('uuid')
 
 // UUID 生成
 const generateUUID = () => {
-  const v4 = () => {
-    return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
-      (c ^ (Math.random() * 16 >> (c / 4))).toString(16)
-    )
-  }
-  return v4()
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40 // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80 // variant 10
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
 }
 
 // 生成多个 UUID
@@ -44,8 +44,10 @@ const generatePassword = () => {
   if (includeSpecial.value) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?'
 
   let password = ''
+  const randomValues = new Uint32Array(passwordLength.value)
+  crypto.getRandomValues(randomValues)
   for (let i = 0; i < passwordLength.value; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length))
+    password += chars.charAt(randomValues[i] % chars.length)
   }
   return password
 }

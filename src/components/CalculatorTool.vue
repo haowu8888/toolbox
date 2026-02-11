@@ -12,13 +12,13 @@ const operation = ref(null)
 const newNumber = ref(true)
 const history = ref([])
 
-const safeEval = (expr) => {
-  try {
-    // 简单的安全计算器：只允许数字和基本操作符
-    const result = new Function('return ' + expr)()
-    return result
-  } catch (err) {
-    return 'Error'
+const safeCalc = (a, op, b) => {
+  switch (op) {
+    case '+': return a + b
+    case '-': return a - b
+    case '*': return a * b
+    case '/': return b !== 0 ? a / b : 'Error'
+    default: return 'Error'
   }
 }
 
@@ -37,7 +37,7 @@ const handleOperation = (op) => {
   if (previousValue.value === null) {
     previousValue.value = currentValue
   } else if (operation.value) {
-    const result = safeEval(`${previousValue.value}${operation.value}${currentValue}`)
+    const result = safeCalc(previousValue.value, operation.value, currentValue)
     display.value = result.toString()
     previousValue.value = result
   }
@@ -49,7 +49,7 @@ const handleOperation = (op) => {
 const handleEquals = () => {
   if (operation.value && previousValue.value !== null) {
     const currentValue = parseFloat(display.value)
-    const result = safeEval(`${previousValue.value}${operation.value}${currentValue}`)
+    const result = safeCalc(previousValue.value, operation.value, currentValue)
 
     history.value.unshift({
       expression: `${previousValue.value} ${operation.value} ${currentValue}`,

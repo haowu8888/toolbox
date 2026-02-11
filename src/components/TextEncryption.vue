@@ -7,6 +7,7 @@ import { useHistory } from '../composables/useStorage'
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
+const activeMode = ref('hash')
 const inputText = ref('')
 const encryptType = ref('md5')
 const results = ref({})
@@ -34,6 +35,47 @@ const encrypt = () => {
   }
 }
 
+// AES 加解密
+const aesInput = ref('')
+const aesKey = ref('')
+const aesOutput = ref('')
+const aesMode = ref('encrypt')
+
+const aesEncrypt = () => {
+  if (!aesInput.value.trim() || !aesKey.value.trim()) {
+    showToast('请输入文本和密钥', 'info')
+    return
+  }
+  try {
+    const encrypted = CryptoJS.AES.encrypt(aesInput.value, aesKey.value).toString()
+    aesOutput.value = encrypted
+    addHistory('AES 加密', encrypted)
+    showToast('加密成功')
+  } catch (err) {
+    showToast('加密失败：' + err.message, 'error')
+  }
+}
+
+const aesDecrypt = () => {
+  if (!aesInput.value.trim() || !aesKey.value.trim()) {
+    showToast('请输入密文和密钥', 'info')
+    return
+  }
+  try {
+    const bytes = CryptoJS.AES.decrypt(aesInput.value, aesKey.value)
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8)
+    if (!decrypted) {
+      showToast('解密失败：密钥错误或密文无效', 'error')
+      return
+    }
+    aesOutput.value = decrypted
+    addHistory('AES 解密', decrypted)
+    showToast('解密成功')
+  } catch (err) {
+    showToast('解密失败：密钥错误或密文无效', 'error')
+  }
+}
+
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
@@ -49,6 +91,12 @@ const clearAll = () => {
   results.value = {}
 }
 
+const clearAes = () => {
+  aesInput.value = ''
+  aesKey.value = ''
+  aesOutput.value = ''
+}
+
 const handleInput = () => {
   encrypt()
 }
@@ -57,38 +105,78 @@ const handleInput = () => {
 <template>
   <div class="text-encryption">
     <h2>文本加密</h2>
-    <p class="description">支持 MD5、SHA-1、SHA-256、SHA-512 多种加密算法</p>
+    <p class="description">支持哈希算法和 AES 对称加解密</p>
 
-    <div class="input-section">
-      <textarea
-        v-model="inputText"
-        @input="handleInput"
-        placeholder="输入需要加密的文本"
-        class="input-textarea"
-      ></textarea>
-      <button @click="clearAll" class="btn btn-secondary">清空</button>
+    <div class="mode-tabs">
+      <button :class="['tab-btn', { active: activeMode === 'hash' }]" @click="activeMode = 'hash'">🔒 哈希摘要</button>
+      <button :class="['tab-btn', { active: activeMode === 'aes' }]" @click="activeMode = 'aes'">🔐 AES 加解密</button>
     </div>
 
-    <div v-if="Object.keys(results).length > 0" class="results-section">
-      <div v-for="(key, algoKey) in algorithms" :key="algoKey" class="result-item">
-        <div class="result-header">
-          <span class="algo-name">{{ key.name }}</span>
+    <!-- 哈希模式 -->
+    <div v-show="activeMode === 'hash'">
+      <div class="input-section">
+        <textarea
+          v-model="inputText"
+          @input="handleInput"
+          placeholder="输入需要加密的文本"
+          class="input-textarea"
+        ></textarea>
+        <button @click="clearAll" class="btn btn-secondary">清空</button>
+      </div>
+
+      <div v-if="Object.keys(results).length > 0" class="results-section">
+        <div v-for="(key, algoKey) in algorithms" :key="algoKey" class="result-item">
+          <div class="result-header">
+            <span class="algo-name">{{ key.name }}</span>
+          </div>
+          <div class="result-content">
+            <code class="result-hash">{{ results[algoKey] }}</code>
+            <button
+              @click="copyToClipboard(results[algoKey])"
+              class="btn btn-copy"
+              title="复制"
+            >
+              📋
+            </button>
+          </div>
         </div>
-        <div class="result-content">
-          <code class="result-hash">{{ results[algoKey] }}</code>
-          <button
-            @click="copyToClipboard(results[algoKey])"
-            class="btn btn-copy"
-            title="复制"
-          >
-            📋
-          </button>
-        </div>
+      </div>
+
+      <div v-else-if="inputText" class="placeholder">
+        输入内容后自动加密...
       </div>
     </div>
 
-    <div v-else-if="inputText" class="placeholder">
-      输入内容后自动加密...
+    <!-- AES 模式 -->
+    <div v-show="activeMode === 'aes'">
+      <div class="input-section">
+        <textarea
+          v-model="aesInput"
+          :placeholder="aesMode === 'encrypt' ? '输入需要加密的明文' : '输入需要解密的密文'"
+          class="input-textarea"
+        ></textarea>
+        <div class="key-input-group">
+          <label>密钥：</label>
+          <input v-model="aesKey" type="password" placeholder="输入密钥" class="key-input" />
+        </div>
+        <div class="aes-buttons">
+          <button @click="aesEncrypt" class="btn btn-primary">🔒 加密</button>
+          <button @click="aesDecrypt" class="btn btn-primary">🔓 解密</button>
+          <button @click="clearAes" class="btn btn-secondary">清空</button>
+        </div>
+      </div>
+
+      <div v-if="aesOutput" class="results-section">
+        <div class="result-item">
+          <div class="result-header">
+            <span class="algo-name">结果</span>
+          </div>
+          <div class="result-content">
+            <code class="result-hash">{{ aesOutput }}</code>
+            <button @click="copyToClipboard(aesOutput)" class="btn btn-copy" title="复制">📋</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -110,6 +198,79 @@ h2 {
   margin: 0;
   color: #888;
   font-size: 0.95rem;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tab-btn {
+  padding: 0.6rem 1.2rem;
+  border: 2px solid #ffd3e1;
+  background: white;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  color: #666;
+}
+
+.tab-btn.active {
+  background: #ff6b6b;
+  color: white;
+  border-color: #ff6b6b;
+}
+
+.tab-btn:hover:not(.active) {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.key-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.key-input-group label {
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+
+.key-input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 2px solid #ffd3e1;
+  border-radius: 8px;
+  font-size: 1rem;
+  background: #fff9fb;
+  color: #333;
+  transition: border-color 0.3s;
+}
+
+.key-input:focus {
+  outline: none;
+  border-color: #ff6b6b;
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
+}
+
+.aes-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background: #ff6b6b;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #ff5252;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
 }
 
 .input-section {
@@ -283,5 +444,32 @@ h2 {
 
 :global([data-theme='dark'] .placeholder) {
   color: #707070;
+}
+
+:global([data-theme='dark'] .tab-btn) {
+  background: #2a2a3e;
+  border-color: #664444;
+  color: #a0a0a0;
+}
+
+:global([data-theme='dark'] .tab-btn.active) {
+  background: #ff6b6b;
+  color: white;
+  border-color: #ff6b6b;
+}
+
+:global([data-theme='dark'] .key-input-group label) {
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark'] .key-input) {
+  background: #2a2a3e;
+  color: #e0e0e0;
+  border-color: #664444;
+}
+
+:global([data-theme='dark'] .key-input:focus) {
+  border-color: #ff8a8a;
+  box-shadow: 0 0 0 3px rgba(255, 138, 138, 0.1);
 }
 </style>

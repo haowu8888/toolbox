@@ -103,15 +103,20 @@ const hslToRgb = (h, s, l) => {
   }
 }
 
+const isUpdating = ref(false)
+
 // 监听 HEX 输入
 watch(
   () => colorInput.value,
   (newValue) => {
+    if (isUpdating.value) return
     if (/^#[0-9A-F]{6}$/i.test(newValue)) {
+      isUpdating.value = true
       const rgb = hexToRgb(newValue)
       rgbInput.value = rgb
       const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b)
       hslInput.value = hsl
+      isUpdating.value = false
     }
   }
 )
@@ -120,9 +125,12 @@ watch(
 watch(
   () => rgbInput.value,
   (newValue) => {
+    if (isUpdating.value) return
+    isUpdating.value = true
     colorInput.value = rgbToHex(newValue.r, newValue.g, newValue.b)
     const hsl = rgbToHsl(newValue.r, newValue.g, newValue.b)
     hslInput.value = hsl
+    isUpdating.value = false
   },
   { deep: true }
 )
@@ -131,9 +139,12 @@ watch(
 watch(
   () => hslInput.value,
   (newValue) => {
+    if (isUpdating.value) return
+    isUpdating.value = true
     const rgb = hslToRgb(newValue.h, newValue.s, newValue.l)
     rgbInput.value = rgb
     colorInput.value = rgbToHex(rgb.r, rgb.g, rgb.b)
+    isUpdating.value = false
   },
   { deep: true }
 )

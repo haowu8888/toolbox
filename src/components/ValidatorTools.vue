@@ -33,7 +33,7 @@ const validators = {
   },
   ipv4: {
     name: 'IPv4 地址',
-    pattern: /^(\d{1,3}\.){3}\d{1,3}$/,
+    pattern: /^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/,
     description: '验证 IPv4 地址格式',
   },
   idcard: {

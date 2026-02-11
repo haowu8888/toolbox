@@ -6,91 +6,90 @@ import { useHistory } from '../composables/useStorage'
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
-const activeTab = ref('url-encode')
-const urlInput = ref('')
-const urlOutput = ref('')
-
-// URL 编码/解码
-const encodeUrl = () => {
-  urlOutput.value = encodeURIComponent(urlInput.value)
-  addHistory('URL 编码', urlOutput.value)
-}
-
-const decodeUrl = () => {
-  try {
-    urlOutput.value = decodeURIComponent(urlInput.value)
-    addHistory('URL 解码', urlOutput.value)
-  } catch (err) {
-    urlOutput.value = '解码失败：' + err.message
-  }
-}
-
-// DNS/IP 工具
-const dnsInput = ref('')
-const dnsResult = ref('')
-
-const lookupDns = () => {
-  if (!dnsInput.value.trim()) return
-
-  // 注：这只是一个模拟演示，实际需要后端支持
-  // 对于学习目的，显示如何使用
-  dnsResult.value = `
-查询对象: ${dnsInput.value}
-
-说明：
-- 完整的DNS查询需要后端API支持
-- 建议使用在线工具或命令行工具
-  例如: nslookup ${dnsInput.value}
-       dig ${dnsInput.value}
-
-常见 A 记录示例:
-- Google: 142.250.185.46
-- GitHub: 140.82.113.3
-- Cloudflare: 104.16.132.229
-  `.trim()
-}
+const activeTab = ref('url-analyze')
 
 // 网址分析
 const analyzeInput = ref('')
-const analyzeResult = ref('')
+const analyzeResult = ref(null)
 
 const analyzeUrl = () => {
   if (!analyzeInput.value.trim()) return
 
   try {
     const url = new URL(analyzeInput.value.startsWith('http') ? analyzeInput.value : 'https://' + analyzeInput.value)
-    analyzeResult.value = `
-协议: ${url.protocol}
-域名: ${url.hostname}
-端口: ${url.port || '默认'}
-路径: ${url.pathname}
-查询参数: ${url.search || '无'}
-哈希值: ${url.hash || '无'}
-完整URL: ${url.href}
-    `.trim()
-    addHistory('网址分析', analyzeResult.value)
+    const params = []
+    url.searchParams.forEach((value, key) => {
+      params.push({ key, value })
+    })
+    analyzeResult.value = {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || '默认',
+      pathname: url.pathname,
+      search: url.search || '无',
+      hash: url.hash || '无',
+      origin: url.origin,
+      href: url.href,
+      params,
+    }
+    addHistory('网址分析', url.href)
   } catch (err) {
-    analyzeResult.value = '错误：无效的URL'
+    analyzeResult.value = null
+    showToast('无效的URL', 'error')
   }
 }
 
-// Base64 编码（补充）
-const base64Input = ref('')
-const base64Output = ref('')
+// DNS 查询 (使用 Google DNS-over-HTTPS)
+const dnsInput = ref('')
+const dnsType = ref('A')
+const dnsResult = ref(null)
+const dnsLoading = ref(false)
+const dnsTypes = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SOA']
 
-const encodeBase64 = () => {
+const lookupDns = async () => {
+  if (!dnsInput.value.trim()) return
+
+  dnsLoading.value = true
+  dnsResult.value = null
+
   try {
-    base64Output.value = btoa(unescape(encodeURIComponent(base64Input.value)))
+    const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(dnsInput.value)}&type=${dnsType.value}`)
+    if (!response.ok) throw new Error('DNS 查询失败')
+    const data = await response.json()
+
+    dnsResult.value = {
+      name: dnsInput.value,
+      type: dnsType.value,
+      status: data.Status === 0 ? '成功' : `错误 (状态码: ${data.Status})`,
+      answers: data.Answer || [],
+      authority: data.Authority || [],
+      comment: data.Comment || '',
+    }
+    addHistory('DNS 查询', `${dnsInput.value} (${dnsType.value})`)
   } catch (err) {
-    base64Output.value = '编码失败：' + err.message
+    showToast('DNS 查询失败：' + err.message, 'error')
+  } finally {
+    dnsLoading.value = false
   }
 }
 
-const decodeBase64 = () => {
+// IP 信息查询
+const ipResult = ref(null)
+const ipLoading = ref(false)
+
+const lookupMyIp = async () => {
+  ipLoading.value = true
+  ipResult.value = null
   try {
-    base64Output.value = decodeURIComponent(escape(atob(base64Input.value)))
+    const response = await fetch('https://ipapi.co/json/')
+    if (!response.ok) throw new Error('查询失败')
+    const data = await response.json()
+    ipResult.value = data
+    addHistory('IP 查询', data.ip)
   } catch (err) {
-    base64Output.value = '解码失败：' + err.message
+    showToast('IP 查询失败：' + err.message, 'error')
+  } finally {
+    ipLoading.value = false
   }
 }
 
@@ -103,128 +102,130 @@ const copyToClipboard = async (text) => {
   }
 }
 
-const clearAll = () => {
-  urlInput.value = ''
-  urlOutput.value = ''
-  dnsInput.value = ''
-  dnsResult.value = ''
-  analyzeInput.value = ''
-  analyzeResult.value = ''
-  base64Input.value = ''
-  base64Output.value = ''
+// DNS 记录类型名称
+const dnsTypeName = (type) => {
+  const map = { 1: 'A', 5: 'CNAME', 15: 'MX', 2: 'NS', 16: 'TXT', 6: 'SOA', 28: 'AAAA' }
+  return map[type] || type
 }
 </script>
 
 <template>
   <div class="network-tools">
     <h2>🌐 网络工具</h2>
-    <p class="description">URL编码、DNS查询、网址分析等网络相关工具</p>
+    <p class="description">网址分析、DNS查询、IP信息查询</p>
 
     <div class="tabs">
       <button
-        v-for="tab in ['url-encode', 'url-analyze', 'base64', 'dns']"
+        v-for="tab in ['url-analyze', 'dns', 'ip']"
         :key="tab"
         :class="['tab-btn', { active: activeTab === tab }]"
         @click="activeTab = tab"
       >
-        {{ tab === 'url-encode' ? 'URL编码' : tab === 'url-analyze' ? '网址分析' : tab === 'base64' ? 'Base64' : 'DNS查询' }}
+        {{ tab === 'url-analyze' ? '🔗 网址分析' : tab === 'dns' ? '🔍 DNS 查询' : '📡 IP 信息' }}
       </button>
-    </div>
-
-    <!-- URL 编码 -->
-    <div v-show="activeTab === 'url-encode'" class="tool-section">
-      <div class="editor-pair">
-        <div class="editor">
-          <div class="editor-label">输入</div>
-          <textarea
-            v-model="urlInput"
-            placeholder="输入要编码的URL或文本"
-            class="editor-textarea"
-          ></textarea>
-        </div>
-        <div class="button-column">
-          <button @click="encodeUrl" class="btn btn-primary">⬇️ 编码</button>
-          <button @click="decodeUrl" class="btn btn-primary">⬆️ 解码</button>
-          <button @click="() => [urlInput, urlOutput] = [urlOutput, urlInput]" class="btn btn-swap">⇄ 交换</button>
-        </div>
-        <div class="editor">
-          <div class="editor-label">输出</div>
-          <textarea
-            v-model="urlOutput"
-            readonly
-            placeholder="编码或解码结果"
-            class="editor-textarea"
-          ></textarea>
-          <button v-if="urlOutput" @click="copyToClipboard(urlOutput)" class="btn-copy">📋 复制</button>
-        </div>
-      </div>
     </div>
 
     <!-- 网址分析 -->
     <div v-show="activeTab === 'url-analyze'" class="tool-section">
-      <div class="analyze-input">
+      <div class="input-row">
         <input
           v-model="analyzeInput"
           type="text"
-          placeholder="输入URL，例如: https://example.com/path?query=value"
+          placeholder="输入URL，例如: https://example.com/path?query=value#hash"
           class="input-field"
+          @keyup.enter="analyzeUrl"
         />
         <button @click="analyzeUrl" class="btn btn-primary">🔍 分析</button>
       </div>
-      <div v-if="analyzeResult" class="result-box">
-        <pre class="result-text">{{ analyzeResult }}</pre>
-        <button @click="copyToClipboard(analyzeResult)" class="btn btn-copy">📋 复制</button>
-      </div>
-    </div>
-
-    <!-- Base64 编码 -->
-    <div v-show="activeTab === 'base64'" class="tool-section">
-      <div class="editor-pair">
-        <div class="editor">
-          <div class="editor-label">输入</div>
-          <textarea
-            v-model="base64Input"
-            placeholder="输入要编码的文本"
-            class="editor-textarea"
-          ></textarea>
+      <div v-if="analyzeResult" class="result-card">
+        <div class="result-grid">
+          <div class="result-row" v-for="(value, label) in {
+            '协议': analyzeResult.protocol,
+            '域名': analyzeResult.hostname,
+            '端口': analyzeResult.port,
+            '路径': analyzeResult.pathname,
+            '查询参数': analyzeResult.search,
+            '哈希值': analyzeResult.hash,
+            '完整URL': analyzeResult.href,
+          }" :key="label">
+            <span class="result-label">{{ label }}</span>
+            <code class="result-value">{{ value }}</code>
+            <button @click="copyToClipboard(String(value))" class="btn-icon" title="复制">📋</button>
+          </div>
         </div>
-        <div class="button-column">
-          <button @click="encodeBase64" class="btn btn-primary">⬇️ 编码</button>
-          <button @click="decodeBase64" class="btn btn-primary">⬆️ 解码</button>
-          <button @click="() => [base64Input, base64Output] = [base64Output, base64Input]" class="btn btn-swap">⇄ 交换</button>
-        </div>
-        <div class="editor">
-          <div class="editor-label">输出</div>
-          <textarea
-            v-model="base64Output"
-            readonly
-            placeholder="编码或解码结果"
-            class="editor-textarea"
-          ></textarea>
-          <button v-if="base64Output" @click="copyToClipboard(base64Output)" class="btn-copy">📋 复制</button>
+        <div v-if="analyzeResult.params.length > 0" class="params-section">
+          <h4>查询参数详情</h4>
+          <div class="params-table">
+            <div v-for="(param, i) in analyzeResult.params" :key="i" class="param-row">
+              <code class="param-key">{{ param.key }}</code>
+              <span>=</span>
+              <code class="param-value">{{ param.value }}</code>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- DNS 查询 -->
     <div v-show="activeTab === 'dns'" class="tool-section">
-      <div class="dns-input">
+      <div class="input-row">
         <input
           v-model="dnsInput"
           type="text"
           placeholder="输入域名，例如: example.com"
           class="input-field"
+          @keyup.enter="lookupDns"
         />
-        <button @click="lookupDns" class="btn btn-primary">🔎 查询</button>
+        <select v-model="dnsType" class="select-field">
+          <option v-for="t in dnsTypes" :key="t" :value="t">{{ t }}</option>
+        </select>
+        <button @click="lookupDns" class="btn btn-primary" :disabled="dnsLoading">
+          {{ dnsLoading ? '查询中...' : '🔎 查询' }}
+        </button>
       </div>
-      <div v-if="dnsResult" class="result-box">
-        <pre class="result-text">{{ dnsResult }}</pre>
-        <button @click="copyToClipboard(dnsResult)" class="btn btn-copy">📋 复制</button>
+      <div v-if="dnsResult" class="result-card">
+        <div class="dns-header">
+          <span class="dns-domain">{{ dnsResult.name }}</span>
+          <span :class="['dns-status', { success: dnsResult.status === '成功' }]">{{ dnsResult.status }}</span>
+        </div>
+        <div v-if="dnsResult.answers.length > 0" class="dns-answers">
+          <h4>查询结果</h4>
+          <div v-for="(answer, i) in dnsResult.answers" :key="i" class="dns-record">
+            <span class="record-type">{{ dnsTypeName(answer.type) }}</span>
+            <code class="record-data">{{ answer.data }}</code>
+            <span class="record-ttl">TTL: {{ answer.TTL }}s</span>
+            <button @click="copyToClipboard(answer.data)" class="btn-icon" title="复制">📋</button>
+          </div>
+        </div>
+        <div v-else class="dns-empty">未找到 {{ dnsResult.type }} 记录</div>
       </div>
     </div>
 
-    <div class="footer-action">
-      <button @click="clearAll" class="btn btn-secondary">清空所有</button>
+    <!-- IP 信息 -->
+    <div v-show="activeTab === 'ip'" class="tool-section">
+      <div class="input-row">
+        <button @click="lookupMyIp" class="btn btn-primary" :disabled="ipLoading">
+          {{ ipLoading ? '查询中...' : '📡 查询我的 IP 信息' }}
+        </button>
+      </div>
+      <div v-if="ipResult" class="result-card">
+        <div class="result-grid">
+          <div class="result-row" v-for="(value, label) in {
+            'IP 地址': ipResult.ip,
+            '城市': ipResult.city,
+            '地区': ipResult.region,
+            '国家': ipResult.country_name,
+            'ISP': ipResult.org,
+            '时区': ipResult.timezone,
+            '经度': ipResult.longitude,
+            '纬度': ipResult.latitude,
+          }" :key="label">
+            <span class="result-label">{{ label }}</span>
+            <code class="result-value">{{ value || '未知' }}</code>
+            <button @click="copyToClipboard(String(value))" class="btn-icon" title="复制">📋</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -240,6 +241,12 @@ h2 {
   margin: 0;
   color: #2196f3;
   font-size: 1.8em;
+}
+
+h4 {
+  margin: 0 0 0.75rem 0;
+  color: #333;
+  font-size: 0.95rem;
 }
 
 .description {
@@ -258,19 +265,13 @@ h2 {
 .tab-btn {
   padding: 0.6rem 1.2rem;
   border: 2px solid #bbdefb;
-  background-color: white;
+  background: white;
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s;
   color: #555;
-}
-
-:global([data-theme='dark'] .tab-btn) {
-  background-color: #2a3a4a;
-  border-color: #3a5a7a;
-  color: #a0c0e0;
 }
 
 .tab-btn:hover {
@@ -279,154 +280,21 @@ h2 {
 }
 
 .tab-btn.active {
-  background-color: #2196f3;
+  background: #2196f3;
   color: white;
   border-color: #2196f3;
   box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
 }
 
 .tool-section {
-  animation: fadeIn 0.3s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.editor-pair {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 1rem;
-  align-items: start;
-}
-
-.editor {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 1.5rem;
 }
 
-.editor-label {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: #555;
-}
-
-:global([data-theme='dark'] .editor-label) {
-  color: #a0c0e0;
-}
-
-.editor-textarea {
-  flex: 1;
-  min-height: 200px;
-  padding: 0.75rem;
-  border: 2px solid #bbdefb;
-  border-radius: 8px;
-  font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
-  background-color: #f0f9ff;
-  color: #333;
-  resize: vertical;
-  transition: border-color 0.3s;
-}
-
-:global([data-theme='dark'] .editor-textarea) {
-  background-color: #1a2a3a;
-  border-color: #3a5a7a;
-  color: #e0e0e0;
-}
-
-.editor-textarea:focus {
-  outline: none;
-  border-color: #2196f3;
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
-}
-
-.button-column {
+.input-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.btn {
-  padding: 0.6rem 1.2rem;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.btn-primary {
-  background-color: #2196f3;
-  color: white;
-}
-
-.btn-primary:hover {
-  background-color: #1976d2;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-}
-
-.btn-secondary {
-  background-color: #f0f0f0;
-  color: #333;
-}
-
-:global([data-theme='dark'] .btn-secondary) {
-  background-color: #2a3a4a;
-  color: #e0e0e0;
-}
-
-.btn-secondary:hover {
-  background-color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .btn-secondary:hover) {
-  background-color: #3a4a5a;
-}
-
-.btn-swap {
-  min-width: 45px;
-  padding: 0.6rem;
-  text-align: center;
-}
-
-.btn-copy {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid #2196f3;
-  background-color: white;
-  color: #2196f3;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
-}
-
-:global([data-theme='dark'] .btn-copy) {
-  background-color: #1a2a3a;
-  color: #45b9b0;
-  border-color: #45b9b0;
-}
-
-.btn-copy:hover {
-  background-color: #e3f2fd;
-}
-
-:global([data-theme='dark'] .btn-copy:hover) {
-  background-color: #2a3a4a;
-}
-
-.analyze-input,
-.dns-input {
-  display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
@@ -437,15 +305,9 @@ h2 {
   border: 2px solid #bbdefb;
   border-radius: 8px;
   font-size: 1rem;
-  background-color: white;
+  background: white;
   color: #333;
   transition: border-color 0.3s;
-}
-
-:global([data-theme='dark'] .input-field) {
-  background-color: #1a2a3a;
-  border-color: #3a5a7a;
-  color: #e0e0e0;
 }
 
 .input-field:focus {
@@ -454,49 +316,201 @@ h2 {
   box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
 }
 
-.result-box {
-  background: #f0f9ff;
+.select-field {
+  padding: 0.75rem;
   border: 2px solid #bbdefb;
   border-radius: 8px;
+  font-size: 0.95rem;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  min-width: 80px;
+}
+
+.btn {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #2196f3;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1976d2;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+}
+
+.btn-icon {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #bbdefb;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: #e3f2fd;
+}
+
+.result-card {
+  background: #f0f9ff;
+  border: 2px solid #bbdefb;
+  border-radius: 12px;
   padding: 1.5rem;
-  position: relative;
 }
 
-:global([data-theme='dark'] .result-box) {
-  background: #1a2a3a;
-  border-color: #3a5a7a;
+.result-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.result-text {
-  margin: 0;
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e3f2fd;
+}
+
+.result-row:last-child {
+  border-bottom: none;
+}
+
+.result-label {
+  font-weight: 600;
+  color: #555;
+  min-width: 80px;
+  font-size: 0.9rem;
+}
+
+.result-value {
+  flex: 1;
   font-family: 'Courier New', monospace;
   font-size: 0.9rem;
   color: #333;
-  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(33, 150, 243, 0.05);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.params-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid #e3f2fd;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+}
+
+.param-key {
+  font-weight: 600;
+  color: #2196f3;
+  font-family: 'Courier New', monospace;
+}
+
+.param-value {
+  color: #e65100;
+  font-family: 'Courier New', monospace;
+}
+
+.dns-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.dns-domain {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #2196f3;
+}
+
+.dns-status {
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #ffebee;
+  color: #c62828;
+}
+
+.dns-status.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.dns-answers {
+  margin-top: 0.5rem;
+}
+
+.dns-record {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.record-type {
+  font-weight: 700;
+  color: #2196f3;
+  min-width: 60px;
+  font-size: 0.85rem;
+  background: #e3f2fd;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.record-data {
+  flex: 1;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  color: #333;
   word-break: break-all;
 }
 
-:global([data-theme='dark'] .result-text) {
-  color: #e0e0e0;
+.record-ttl {
+  font-size: 0.8rem;
+  color: #999;
+  white-space: nowrap;
 }
 
-.footer-action {
-  display: flex;
-  justify-content: center;
+.dns-empty {
+  text-align: center;
+  color: #999;
+  padding: 1rem;
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
-  .editor-pair {
-    grid-template-columns: 1fr;
-  }
-
-  .button-column {
-    flex-direction: row;
-    order: -1;
-  }
-
-  .analyze-input,
-  .dns-input {
+  .input-row {
     flex-direction: column;
   }
 
@@ -504,17 +518,105 @@ h2 {
     min-width: auto;
   }
 
-  .btn {
-    flex: 1;
+  .result-row {
+    flex-wrap: wrap;
+  }
+
+  .result-label {
+    min-width: 100%;
+  }
+
+  .dns-record {
+    flex-wrap: wrap;
   }
 }
 
-/* Dark mode overrides */
-:global([data-theme='dark'] h2) {
+/* Dark mode */
+:global([data-theme='dark']) h2 {
   color: #64b5f6;
 }
 
-:global([data-theme='dark'] .description) {
+:global([data-theme='dark']) h4 {
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark']) .description {
   color: #a0c0e0;
+}
+
+:global([data-theme='dark']) .tab-btn {
+  background: #2a3a4a;
+  border-color: #3a5a7a;
+  color: #a0c0e0;
+}
+
+:global([data-theme='dark']) .tab-btn.active {
+  background: #2196f3;
+  color: white;
+  border-color: #2196f3;
+}
+
+:global([data-theme='dark']) .input-field {
+  background: #1a2a3a;
+  border-color: #3a5a7a;
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark']) .select-field {
+  background: #1a2a3a;
+  border-color: #3a5a7a;
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark']) .result-card {
+  background: #1a2a3a;
+  border-color: #3a5a7a;
+}
+
+:global([data-theme='dark']) .result-row {
+  border-bottom-color: #2a3a4a;
+}
+
+:global([data-theme='dark']) .result-label {
+  color: #a0c0e0;
+}
+
+:global([data-theme='dark']) .result-value {
+  color: #e0e0e0;
+  background: rgba(33, 150, 243, 0.1);
+}
+
+:global([data-theme='dark']) .btn-icon {
+  border-color: #3a5a7a;
+}
+
+:global([data-theme='dark']) .btn-icon:hover {
+  background: #2a3a4a;
+}
+
+:global([data-theme='dark']) .dns-record {
+  background: #2a3a4a;
+}
+
+:global([data-theme='dark']) .record-type {
+  background: #1a3a5a;
+  color: #64b5f6;
+}
+
+:global([data-theme='dark']) .record-data {
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark']) .dns-status.success {
+  background: #1a3a2a;
+  color: #5ec89f;
+}
+
+:global([data-theme='dark']) .params-section {
+  border-top-color: #2a3a4a;
+}
+
+:global([data-theme='dark']) .param-value {
+  color: #ffab91;
 }
 </style>

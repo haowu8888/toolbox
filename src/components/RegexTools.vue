@@ -60,6 +60,10 @@ const replace = () => {
   }
 }
 
+const escapeHtml = (str) => {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 const highlightMatches = () => {
   if (!pattern.value.trim() || !testText.value.trim()) {
     return
@@ -67,8 +71,19 @@ const highlightMatches = () => {
 
   try {
     const flagStr = flags.value.join('')
-    const regex = new RegExp(`(${pattern.value})`, flagStr.includes('g') ? 'gi' : 'i')
-    const result = testText.value.replace(regex, '<mark>$1</mark>')
+    const regex = new RegExp(pattern.value, flagStr.includes('g') ? flagStr : flagStr + 'g')
+    let result = ''
+    let lastIndex = 0
+    let match
+    while ((match = regex.exec(testText.value)) !== null) {
+      result += escapeHtml(testText.value.slice(lastIndex, match.index))
+      result += '<mark>' + escapeHtml(match[0]) + '</mark>'
+      lastIndex = match.index + match[0].length
+      if (match[0].length === 0) {
+        regex.lastIndex++
+      }
+    }
+    result += escapeHtml(testText.value.slice(lastIndex))
     output.value = result
   } catch (err) {
     error.value = '高亮失败：' + err.message

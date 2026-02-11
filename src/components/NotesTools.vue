@@ -212,6 +212,43 @@ const formatDate = (date) => {
   }
 }
 
+const showExportMenu = ref(false)
+
+const exportAsJson = () => {
+  const data = JSON.stringify(notes.value, null, 2)
+  const blob = new Blob([data], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'toolbox-notes.json'
+  link.click()
+  URL.revokeObjectURL(url)
+  showExportMenu.value = false
+  showToast('已导出为 JSON')
+}
+
+const exportAsMarkdown = () => {
+  const priorityMap = { high: '高', normal: '普通', low: '低' }
+  let md = '# 我的笔记\n\n'
+  notes.value.forEach(note => {
+    md += `## ${note.title}\n`
+    if (note.tags && note.tags.length) md += `- 标签: ${note.tags.join(', ')}\n`
+    md += `- 优先级: ${priorityMap[note.priority] || '普通'}\n`
+    md += `- 创建时间: ${new Date(note.createdAt).toLocaleString('zh-CN')}\n`
+    if (note.isTodo) md += `- 状态: ${note.completed ? '已完成' : '未完成'}\n`
+    md += `\n${note.content}\n\n---\n\n`
+  })
+  const blob = new Blob([md], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'toolbox-notes.md'
+  link.click()
+  URL.revokeObjectURL(url)
+  showExportMenu.value = false
+  showToast('已导出为 Markdown')
+}
+
 const copyContent = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
@@ -314,6 +351,13 @@ const priorityColor = (priority) => {
           <option value="">全部标签</option>
           <option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option>
         </select>
+        <div class="export-wrapper">
+          <button @click="showExportMenu = !showExportMenu" class="btn-export">📤 导出</button>
+          <div v-if="showExportMenu" class="export-menu">
+            <button @click="exportAsJson" class="export-option">导出为 JSON</button>
+            <button @click="exportAsMarkdown" class="export-option">导出为 Markdown</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -785,6 +829,77 @@ h3.completed {
   background-color: #1a1a2e;
   border-color: #4a3a5a;
   color: #e0e0e0;
+}
+
+.export-wrapper {
+  position: relative;
+}
+
+.btn-export {
+  padding: 0.75rem 1rem;
+  border: 2px solid #9c27b0;
+  background: white;
+  color: #9c27b0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-export:hover {
+  background: #9c27b0;
+  color: white;
+}
+
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.3rem;
+  background: white;
+  border: 2px solid #e0bee7;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  overflow: hidden;
+  min-width: 160px;
+}
+
+.export-option {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #333;
+  transition: background 0.2s;
+}
+
+.export-option:hover {
+  background: #f3e5f5;
+}
+
+:global([data-theme='dark'] .btn-export) {
+  background: #2a2a3e;
+  border-color: #9c27b0;
+  color: #ce93d8;
+}
+
+:global([data-theme='dark'] .export-menu) {
+  background: #2a2a3e;
+  border-color: #4a3a5a;
+}
+
+:global([data-theme='dark'] .export-option) {
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark'] .export-option:hover) {
+  background: #3a2a4a;
 }
 
 .notes-list {

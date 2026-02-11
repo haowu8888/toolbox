@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 
@@ -10,17 +10,22 @@ const inputJson = ref('')
 const outputJson = ref('')
 const error = ref('')
 const formatType = ref('pretty')
+const viewMode = ref('text') // 'text' | 'tree'
+const parsedData = ref(null)
+const collapsedPaths = ref(new Set())
 
 const formatJson = () => {
   if (!inputJson.value.trim()) {
     outputJson.value = ''
     error.value = ''
+    parsedData.value = null
     return
   }
 
   try {
     error.value = ''
     const parsed = JSON.parse(inputJson.value)
+    parsedData.value = parsed
 
     if (formatType.value === 'pretty') {
       outputJson.value = JSON.stringify(parsed, null, 2)
@@ -32,12 +37,58 @@ const formatJson = () => {
   } catch (err) {
     error.value = 'JSON 格式错误：' + err.message
     outputJson.value = ''
+    parsedData.value = null
+  }
+}
+
+// 树形视图辅助函数
+const getType = (val) => {
+  if (val === null) return 'null'
+  if (Array.isArray(val)) return 'array'
+  return typeof val
+}
+
+const toggleCollapse = (path) => {
+  const newSet = new Set(collapsedPaths.value)
+  if (newSet.has(path)) {
+    newSet.delete(path)
+  } else {
+    newSet.add(path)
+  }
+  collapsedPaths.value = newSet
+}
+
+const isCollapsed = (path) => collapsedPaths.value.has(path)
+
+const collapseAll = () => {
+  const paths = new Set()
+  const walk = (obj, path) => {
+    if (obj && typeof obj === 'object') {
+      paths.add(path)
+      Object.keys(obj).forEach(key => {
+        walk(obj[key], path ? `${path}.${key}` : key)
+      })
+    }
+  }
+  walk(parsedData.value, '$')
+  collapsedPaths.value = paths
+}
+
+const expandAll = () => {
+  collapsedPaths.value = new Set()
+}
+
+const copyPath = async (path) => {
+  try {
+    await navigator.clipboard.writeText(path)
+    showToast('路径已复制')
+  } catch (err) {
+    showToast('复制失败', 'error')
   }
 }
 
 const copyToClipboard = async () => {
   if (!outputJson.value) return
-
   try {
     await navigator.clipboard.writeText(outputJson.value)
     showToast('已复制到剪贴板')
@@ -49,7 +100,6 @@ const copyToClipboard = async () => {
 
 const downloadJson = () => {
   if (!outputJson.value) return
-
   const blob = new Blob([outputJson.value], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -63,12 +113,13 @@ const clearAll = () => {
   inputJson.value = ''
   outputJson.value = ''
   error.value = ''
+  parsedData.value = null
+  collapsedPaths.value = new Set()
 }
 
 const loadFile = (event) => {
   const file = event.target.files?.[0]
   if (!file) return
-
   const reader = new FileReader()
   reader.onload = (e) => {
     inputJson.value = e.target?.result || ''
@@ -79,6 +130,19 @@ const loadFile = (event) => {
 
 const handleInputChange = () => {
   formatJson()
+}
+
+// 树形视图递归渲染数据
+const getEntries = (data) => {
+  if (Array.isArray(data)) {
+    return data.map((v, i) => ({ key: i, value: v }))
+  }
+  return Object.entries(data).map(([k, v]) => ({ key: k, value: v }))
+}
+
+const getPreview = (data) => {
+  if (Array.isArray(data)) return `Array(${data.length})`
+  return `Object{${Object.keys(data).length}}`
 }
 </script>
 
@@ -103,6 +167,10 @@ const handleInputChange = () => {
       </div>
 
       <div class="button-group">
+        <div class="view-toggle">
+          <button :class="['toggle-btn', { active: viewMode === 'text' }]" @click="viewMode = 'text'">文本</button>
+          <button :class="['toggle-btn', { active: viewMode === 'tree' }]" @click="viewMode = 'tree'">树形</button>
+        </div>
         <label class="btn btn-file">
           <input type="file" accept=".json" @change="loadFile" style="display: none" />
           📁 上传 JSON 文件
@@ -124,7 +192,8 @@ const handleInputChange = () => {
         ></textarea>
       </div>
 
-      <div class="editor">
+      <!-- 文本视图 -->
+      <div v-if="viewMode === 'text'" class="editor">
         <div class="editor-label">输出</div>
         <textarea
           v-model="outputJson"
@@ -132,6 +201,69 @@ const handleInputChange = () => {
           placeholder="格式化后的 JSON 将显示在这里"
           class="editor-textarea"
         ></textarea>
+      </div>
+
+      <!-- 树形视图 -->
+      <div v-else class="editor">
+        <div class="editor-label">
+          树形视图
+          <span v-if="parsedData !== null" class="tree-controls">
+            <button @click="expandAll" class="tree-ctrl-btn">全部展开</button>
+            <button @click="collapseAll" class="tree-ctrl-btn">全部折叠</button>
+          </span>
+        </div>
+        <div v-if="parsedData !== null" class="tree-container">
+          <div class="tree-root">
+            <template v-if="typeof parsedData === 'object' && parsedData !== null">
+              <div v-for="entry in getEntries(parsedData)" :key="entry.key" class="tree-node">
+                <template v-if="entry.value && typeof entry.value === 'object'">
+                  <span class="tree-toggle" @click="toggleCollapse('$.' + entry.key)">
+                    {{ isCollapsed('$.' + entry.key) ? '▶' : '▼' }}
+                  </span>
+                  <span class="tree-key" @click="copyPath('$.' + entry.key)" title="点击复制路径">{{ entry.key }}</span>
+                  <span class="tree-colon">:</span>
+                  <span class="tree-preview">{{ getPreview(entry.value) }}</span>
+                  <div v-if="!isCollapsed('$.' + entry.key)" class="tree-children">
+                    <div v-for="child in getEntries(entry.value)" :key="child.key" class="tree-node">
+                      <template v-if="child.value && typeof child.value === 'object'">
+                        <span class="tree-toggle" @click="toggleCollapse('$.' + entry.key + '.' + child.key)">
+                          {{ isCollapsed('$.' + entry.key + '.' + child.key) ? '▶' : '▼' }}
+                        </span>
+                        <span class="tree-key" @click="copyPath('$.' + entry.key + '.' + child.key)" title="点击复制路径">{{ child.key }}</span>
+                        <span class="tree-colon">:</span>
+                        <span class="tree-preview">{{ getPreview(child.value) }}</span>
+                        <div v-if="!isCollapsed('$.' + entry.key + '.' + child.key)" class="tree-children">
+                          <div v-for="grandchild in getEntries(child.value)" :key="grandchild.key" class="tree-node">
+                            <span class="tree-leaf-space"></span>
+                            <span class="tree-key" @click="copyPath('$.' + entry.key + '.' + child.key + '.' + grandchild.key)" title="点击复制路径">{{ grandchild.key }}</span>
+                            <span class="tree-colon">:</span>
+                            <span :class="'tree-value type-' + getType(grandchild.value)">{{ grandchild.value === null ? 'null' : typeof grandchild.value === 'object' ? JSON.stringify(grandchild.value) : JSON.stringify(grandchild.value) }}</span>
+                          </div>
+                        </div>
+                      </template>
+                      <template v-else>
+                        <span class="tree-leaf-space"></span>
+                        <span class="tree-key" @click="copyPath('$.' + entry.key + '.' + child.key)" title="点击复制路径">{{ child.key }}</span>
+                        <span class="tree-colon">:</span>
+                        <span :class="'tree-value type-' + getType(child.value)">{{ child.value === null ? 'null' : JSON.stringify(child.value) }}</span>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+                <template v-else>
+                  <span class="tree-leaf-space"></span>
+                  <span class="tree-key" @click="copyPath('$.' + entry.key)" title="点击复制路径">{{ entry.key }}</span>
+                  <span class="tree-colon">:</span>
+                  <span :class="'tree-value type-' + getType(entry.value)">{{ entry.value === null ? 'null' : JSON.stringify(entry.value) }}</span>
+                </template>
+              </div>
+            </template>
+            <template v-else>
+              <span :class="'tree-value type-' + getType(parsedData)">{{ JSON.stringify(parsedData) }}</span>
+            </template>
+          </div>
+        </div>
+        <div v-else class="tree-placeholder">解析 JSON 后显示树形结构</div>
       </div>
     </div>
 
@@ -296,6 +428,126 @@ h2 {
   }
 }
 
+.view-toggle {
+  display: flex;
+  border: 2px solid #42b883;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toggle-btn {
+  padding: 0.4rem 1rem;
+  border: none;
+  background: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #42b883;
+  transition: all 0.2s;
+}
+
+.toggle-btn.active {
+  background: #42b883;
+  color: white;
+}
+
+.tree-controls {
+  margin-left: 1rem;
+}
+
+.tree-ctrl-btn {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  margin-left: 0.3rem;
+  color: #666;
+}
+
+.tree-ctrl-btn:hover {
+  background: #f0f0f0;
+}
+
+.tree-container {
+  min-height: 300px;
+  max-height: 500px;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fafafa;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+}
+
+.tree-placeholder {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  color: #999;
+  font-style: italic;
+}
+
+.tree-node {
+  line-height: 1.6;
+}
+
+.tree-children {
+  padding-left: 1.5rem;
+  border-left: 1px dashed #ddd;
+  margin-left: 0.4rem;
+}
+
+.tree-toggle {
+  cursor: pointer;
+  display: inline-block;
+  width: 1rem;
+  text-align: center;
+  color: #999;
+  font-size: 0.7rem;
+  user-select: none;
+}
+
+.tree-toggle:hover {
+  color: #42b883;
+}
+
+.tree-leaf-space {
+  display: inline-block;
+  width: 1rem;
+}
+
+.tree-key {
+  color: #881391;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tree-key:hover {
+  text-decoration: underline;
+}
+
+.tree-colon {
+  color: #333;
+  margin: 0 0.3rem;
+}
+
+.tree-preview {
+  color: #999;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.tree-value.type-string { color: #0B7500; }
+.tree-value.type-number { color: #1A01CC; }
+.tree-value.type-boolean { color: #FF6B6B; }
+.tree-value.type-null { color: #808080; font-style: italic; }
+
 @media (prefers-color-scheme: light) {
   .format-options label {
     color: #213547;
@@ -372,4 +624,50 @@ h2 {
   color: #ff6b6b;
   border-left-color: #ff6b6b;
 }
+
+:global([data-theme='dark'] .toggle-btn) {
+  background: #2a2a3e;
+  color: #5ec89f;
+}
+
+:global([data-theme='dark'] .toggle-btn.active) {
+  background: #42b883;
+  color: white;
+}
+
+:global([data-theme='dark'] .tree-container) {
+  background: #2a2a3e;
+  border-color: #444;
+}
+
+:global([data-theme='dark'] .tree-placeholder) {
+  border-color: #444;
+  color: #666;
+}
+
+:global([data-theme='dark'] .tree-children) {
+  border-left-color: #555;
+}
+
+:global([data-theme='dark'] .tree-key) {
+  color: #c792ea;
+}
+
+:global([data-theme='dark'] .tree-colon) {
+  color: #e0e0e0;
+}
+
+:global([data-theme='dark'] .tree-ctrl-btn) {
+  border-color: #555;
+  color: #a0a0a0;
+}
+
+:global([data-theme='dark'] .tree-ctrl-btn:hover) {
+  background: #3a3a4e;
+}
+
+:global([data-theme='dark'] .tree-value.type-string) { color: #c3e88d; }
+:global([data-theme='dark'] .tree-value.type-number) { color: #f78c6c; }
+:global([data-theme='dark'] .tree-value.type-boolean) { color: #ff5370; }
+:global([data-theme='dark'] .tree-value.type-null) { color: #808080; }
 </style>
