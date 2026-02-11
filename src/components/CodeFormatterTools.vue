@@ -10,6 +10,7 @@ const inputCode = ref('')
 const codeType = ref('json')
 const indentSize = ref(2)
 const output = ref('')
+const sqlUppercase = ref(true)
 
 // JSON 格式化
 const formatJSON = (json) => {
@@ -21,23 +22,202 @@ const formatJSON = (json) => {
   }
 }
 
-// SQL 格式化（简单版本）
+// SQL 格式化（增强版：支持缩进、关键字大写、括号对齐、子查询缩进）
 const formatSQL = (sql) => {
-  return sql
-    .replace(/\bSELECT\b/gi, '\nSELECT')
-    .replace(/\bFROM\b/gi, '\nFROM')
-    .replace(/\bWHERE\b/gi, '\nWHERE')
-    .replace(/\bJOIN\b/gi, '\nJOIN')
-    .replace(/\bLEFT JOIN\b/gi, '\nLEFT JOIN')
-    .replace(/\bRIGHT JOIN\b/gi, '\nRIGHT JOIN')
-    .replace(/\bINNER JOIN\b/gi, '\nINNER JOIN')
-    .replace(/\bON\b/gi, '\nON')
-    .replace(/\bGROUP BY\b/gi, '\nGROUP BY')
-    .replace(/\bORDER BY\b/gi, '\nORDER BY')
-    .replace(/\bHAVING\b/gi, '\nHAVING')
-    .replace(/\bAND\b/gi, '\nAND')
-    .replace(/\bOR\b/gi, '\nOR')
-    .trim()
+  const indent = ' '.repeat(indentSize.value)
+
+  // SQL 主要关键字分类
+  const majorKeywords = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'UNION ALL', 'INTERSECT', 'EXCEPT', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE']
+  const joinKeywords = ['JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'FULL OUTER JOIN', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'CROSS JOIN', 'NATURAL JOIN']
+  const subKeywords = ['AND', 'OR', 'ON']
+
+  // Tokenize: split SQL into meaningful tokens while preserving strings and parentheses
+  const tokenize = (input) => {
+    const tokens = []
+    let i = 0
+    while (i < input.length) {
+      // Skip whitespace
+      if (/\s/.test(input[i])) {
+        i++
+        continue
+      }
+      // String literal (single quotes)
+      if (input[i] === "'") {
+        let j = i + 1
+        while (j < input.length) {
+          if (input[j] === "'" && input[j + 1] === "'") { j += 2; continue }
+          if (input[j] === "'") { j++; break }
+          j++
+        }
+        tokens.push({ type: 'string', value: input.substring(i, j) })
+        i = j
+        continue
+      }
+      // String literal (double quotes - identifiers)
+      if (input[i] === '"') {
+        let j = i + 1
+        while (j < input.length && input[j] !== '"') j++
+        j++
+        tokens.push({ type: 'string', value: input.substring(i, j) })
+        i = j
+        continue
+      }
+      // Parentheses
+      if (input[i] === '(') {
+        tokens.push({ type: 'openParen', value: '(' })
+        i++
+        continue
+      }
+      if (input[i] === ')') {
+        tokens.push({ type: 'closeParen', value: ')' })
+        i++
+        continue
+      }
+      // Comma
+      if (input[i] === ',') {
+        tokens.push({ type: 'comma', value: ',' })
+        i++
+        continue
+      }
+      // Semicolon
+      if (input[i] === ';') {
+        tokens.push({ type: 'semicolon', value: ';' })
+        i++
+        continue
+      }
+      // Word or operator
+      if (/[a-zA-Z_]/.test(input[i])) {
+        let j = i
+        while (j < input.length && /[a-zA-Z0-9_.]/.test(input[j])) j++
+        tokens.push({ type: 'word', value: input.substring(i, j) })
+        i = j
+        continue
+      }
+      // Numbers
+      if (/[0-9]/.test(input[i])) {
+        let j = i
+        while (j < input.length && /[0-9.]/.test(input[j])) j++
+        tokens.push({ type: 'number', value: input.substring(i, j) })
+        i = j
+        continue
+      }
+      // Operators and other characters
+      // Multi-char operators
+      if (i + 1 < input.length) {
+        const two = input.substring(i, i + 2)
+        if (['>=', '<=', '<>', '!=', '||', '::'].includes(two)) {
+          tokens.push({ type: 'operator', value: two })
+          i += 2
+          continue
+        }
+      }
+      tokens.push({ type: 'operator', value: input[i] })
+      i++
+    }
+    return tokens
+  }
+
+  // Merge multi-word keywords (e.g., "GROUP" + "BY" → "GROUP BY")
+  const mergeKeywords = (tokens) => {
+    const merged = []
+    const multiWord = ['GROUP BY', 'ORDER BY', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'CROSS JOIN', 'NATURAL JOIN', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'UNION ALL', 'INSERT INTO', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'IS NOT', 'NOT IN', 'NOT EXISTS', 'NOT LIKE', 'NOT BETWEEN']
+
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].type === 'word') {
+        let matched = false
+        // Try 3-word combos first, then 2-word
+        for (const len of [3, 2]) {
+          if (i + len - 1 < tokens.length) {
+            const combo = tokens.slice(i, i + len).filter(t => t.type === 'word').map(t => t.value.toUpperCase()).join(' ')
+            if (multiWord.includes(combo) && tokens.slice(i, i + len).every(t => t.type === 'word')) {
+              merged.push({ type: 'word', value: tokens.slice(i, i + len).map(t => t.value).join(' ') })
+              i += len - 1
+              matched = true
+              break
+            }
+          }
+        }
+        if (!matched) {
+          merged.push(tokens[i])
+        }
+      } else {
+        merged.push(tokens[i])
+      }
+    }
+    return merged
+  }
+
+  // Classify a word token
+  const classify = (val) => {
+    const upper = val.toUpperCase()
+    if (majorKeywords.includes(upper)) return 'major'
+    if (joinKeywords.includes(upper)) return 'join'
+    if (subKeywords.includes(upper)) return 'sub'
+    return 'other'
+  }
+
+  // Format
+  const tokens = mergeKeywords(tokenize(sql))
+  let result = ''
+  let depth = 0
+  let afterSelect = false
+
+  const newline = () => '\n' + indent.repeat(depth)
+  const newlineIndented = () => '\n' + indent.repeat(depth + 1)
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    const val = token.value
+    const upper = val.toUpperCase()
+
+    if (token.type === 'word') {
+      const cls = classify(val)
+      const outputVal = sqlUppercase.value ? upper : val
+
+      if (cls === 'major') {
+        if (upper === 'SELECT') {
+          if (result.length > 0) result += newline()
+          result += outputVal
+          afterSelect = true
+        } else {
+          afterSelect = false
+          result += newline() + outputVal
+        }
+      } else if (cls === 'join') {
+        afterSelect = false
+        result += newline() + outputVal
+      } else if (cls === 'sub') {
+        afterSelect = false
+        result += newlineIndented() + outputVal
+      } else {
+        result += ' ' + (sqlUppercase.value && ['AS', 'IN', 'BETWEEN', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'NULL', 'TRUE', 'FALSE', 'NOT', 'IS', 'ASC', 'DESC', 'DISTINCT', 'ALL', 'ANY', 'SOME', 'INTO', 'TABLE', 'INDEX', 'VIEW', 'TRIGGER', 'FUNCTION', 'PROCEDURE', 'IF', 'BEGIN', 'COMMIT', 'ROLLBACK', 'CAST', 'COALESCE', 'NULLIF', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(upper) ? upper : val)
+      }
+    } else if (token.type === 'openParen') {
+      result += ' ('
+      depth++
+      // Check if this is a subquery (next meaningful token is SELECT)
+      const nextWord = tokens.slice(i + 1).find(t => t.type === 'word')
+      if (nextWord && nextWord.value.toUpperCase() === 'SELECT') {
+        // Subquery: add newline after opening paren
+        result += newline()
+      }
+    } else if (token.type === 'closeParen') {
+      depth = Math.max(0, depth - 1)
+      result += newline() + ')'
+    } else if (token.type === 'comma') {
+      if (afterSelect) {
+        result += ',' + newlineIndented()
+      } else {
+        result += ','
+      }
+    } else if (token.type === 'semicolon') {
+      result += ';' + '\n'
+    } else {
+      result += ' ' + val
+    }
+  }
+
+  return result.trim()
 }
 
 // HTML 格式化
@@ -195,6 +375,10 @@ const clearAll = () => {
         </label>
         <button @click="format" class="btn btn-primary">✨ 格式化</button>
         <button @click="minify" class="btn btn-secondary">📦 压缩</button>
+        <label v-if="codeType === 'sql'" class="checkbox-label">
+          <input type="checkbox" v-model="sqlUppercase" />
+          关键字大写
+        </label>
       </div>
 
       <div class="editor-pair">
@@ -459,6 +643,28 @@ h2 {
 .btn-copy:hover {
   background-color: #9c27b0;
   color: white;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: #9c27b0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+:global([data-theme='dark']) .checkbox-label {
+  color: #a0c0e0;
 }
 
 .diff-result {

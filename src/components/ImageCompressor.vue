@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useToast } from '../composables/useToast'
 
 const { showToast } = useToast()
@@ -177,6 +177,11 @@ const reset = () => {
   maxWidth.value = ''
   maxHeight.value = ''
 }
+
+onUnmounted(() => {
+  if (originalUrl.value) URL.revokeObjectURL(originalUrl.value)
+  if (compressedUrl.value) URL.revokeObjectURL(compressedUrl.value)
+})
 </script>
 
 <template>

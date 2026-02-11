@@ -1,19 +1,31 @@
-import { ref, watch, computed } from 'vue'
+import { ref, computed } from 'vue'
 
 const theme = ref('light')
+let mediaQuery = null
 
 // 初始化主题
 const initTheme = () => {
   const saved = localStorage.getItem('toolbox_theme')
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
   if (saved) {
     theme.value = saved
-  } else if (prefersDark) {
+  } else if (mediaQuery.matches) {
     theme.value = 'dark'
   }
 
   applyTheme(theme.value)
+
+  // 监听系统主题切换
+  mediaQuery.addEventListener('change', handleSystemThemeChange)
+}
+
+const handleSystemThemeChange = (e) => {
+  // 仅当用户未手动设置过主题时跟随系统
+  if (!localStorage.getItem('toolbox_theme')) {
+    theme.value = e.matches ? 'dark' : 'light'
+    applyTheme(theme.value)
+  }
 }
 
 // 应用主题

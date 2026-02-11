@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import QRCode from 'qrcode'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
@@ -12,28 +12,31 @@ const inputValue = ref('')
 const qrCodeUrl = ref('')
 const error = ref('')
 
-// 生成二维码
-watch(inputValue, async (newValue) => {
+// 生成二维码（防抖 300ms）
+let qrDebounceTimer = null
+watch(inputValue, (newValue) => {
+  if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
   if (!newValue.trim()) {
     qrCodeUrl.value = ''
     error.value = ''
     return
   }
-
-  try {
-    error.value = ''
-    qrCodeUrl.value = await QRCode.toDataURL(newValue, {
-      errorCorrectionLevel: 'H',
-      type: 'image/png',
-      quality: 0.95,
-      margin: 1,
-      width: 300,
-    })
-  } catch (err) {
-    error.value = '生成二维码失败：' + err.message
-    qrCodeUrl.value = ''
-  }
-}, { immediate: true })
+  qrDebounceTimer = setTimeout(async () => {
+    try {
+      error.value = ''
+      qrCodeUrl.value = await QRCode.toDataURL(newValue, {
+        errorCorrectionLevel: 'H',
+        type: 'image/png',
+        quality: 0.95,
+        margin: 1,
+        width: 300,
+      })
+    } catch (err) {
+      error.value = '生成二维码失败：' + err.message
+      qrCodeUrl.value = ''
+    }
+  }, 300)
+})
 
 const downloadQRCode = () => {
   if (!qrCodeUrl.value) return
@@ -73,6 +76,10 @@ const handleDragOver = (event) => {
 
 const scanImage = async (file) => {
   scanResult.value = ''
+  // 释放旧的 Object URL
+  if (scanPreview.value) {
+    URL.revokeObjectURL(scanPreview.value)
+  }
   const url = URL.createObjectURL(file)
   scanPreview.value = url
 
@@ -115,8 +122,18 @@ const copyScanResult = async () => {
 
 const clearScan = () => {
   scanResult.value = ''
+  if (scanPreview.value) {
+    URL.revokeObjectURL(scanPreview.value)
+  }
   scanPreview.value = ''
 }
+
+onUnmounted(() => {
+  if (scanPreview.value) {
+    URL.revokeObjectURL(scanPreview.value)
+  }
+  if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
+})
 </script>
 
 <template>

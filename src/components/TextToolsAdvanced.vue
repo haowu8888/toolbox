@@ -21,13 +21,15 @@ const generateUUID = () => {
 
 // 生成多个 UUID
 const uuidCount = ref(1)
-const uuidList = computed(() => {
+const uuidList = ref([generateUUID()])
+
+const refreshUuids = () => {
   const list = []
-  for (let i = 0; i < parseInt(uuidCount.value); i++) {
+  for (let i = 0; i < parseInt(uuidCount.value) || 1; i++) {
     list.push(generateUUID())
   }
-  return list
-})
+  uuidList.value = list
+}
 
 // 密码生成
 const passwordLength = ref(16)
@@ -175,6 +177,7 @@ const clearAll = () => {
       <div class="input-group">
         <label>生成数量：</label>
         <input v-model.number="uuidCount" type="number" min="1" max="100" class="input-field" />
+        <button @click="refreshUuids" class="btn btn-primary">刷新</button>
         <button @click="copyAllUUIDs" class="btn btn-primary">📋 复制所有</button>
       </div>
       <div class="uuid-list">

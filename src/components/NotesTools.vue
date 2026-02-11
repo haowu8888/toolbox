@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useLocalStorage } from '../composables/useStorage'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
@@ -28,6 +28,13 @@ const availableTags = ['工作', '学习', '生活', '重要', '待办']
 
 onMounted(() => {
   notes.value = storage.getValue()
+})
+
+onUnmounted(() => {
+  if (confirmTimer) {
+    clearTimeout(confirmTimer)
+    confirmTimer = null
+  }
 })
 
 const filteredNotes = computed(() => {

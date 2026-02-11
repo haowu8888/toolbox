@@ -30,6 +30,7 @@ let _historyRef = null
 let _historyKey = 'toolbox_history'
 let _favoritesRef = null
 let _favoritesKey = 'toolbox_favorites'
+let _idCounter = 0
 
 function loadFromStorage(key, defaultValue) {
   try {
@@ -59,7 +60,7 @@ export const useHistory = (key = 'toolbox_history') => {
 
   const addHistory = (type, value) => {
     const item = {
-      id: Date.now(),
+      id: `${Date.now()}-${++_idCounter}`,
       type,
       value: typeof value === 'string' ? value : JSON.stringify(value),
       timestamp: new Date().toISOString(),
@@ -101,7 +102,7 @@ export const useFavorites = (key = 'toolbox_favorites') => {
 
   const addFavorite = (type, value, name = '') => {
     const item = {
-      id: Date.now(),
+      id: `${Date.now()}-${++_idCounter}`,
       type,
       value: typeof value === 'string' ? value : JSON.stringify(value),
       name: name || (typeof value === 'string' ? value.substring(0, 30) : ''),

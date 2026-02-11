@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
+const emit = defineEmits(['select'])
+
 const showSearch = ref(false)
 const searchInput = ref('')
 const selectedIndex = ref(0)
@@ -22,8 +24,15 @@ const tools = [
   { id: 'textadvanced', name: '文本处理', keywords: ['文本', 'uuid', '密码', '去重', '大小写'], icon: '✨' },
   { id: 'calculator', name: '计算器', keywords: ['计算', '计算器', 'calculator', '数学'], icon: '🧮' },
   { id: 'codeformatter', name: '代码工具', keywords: ['代码', '格式化', 'sql', 'html', 'xml', '对比'], icon: '💻' },
-  { id: 'fileconverter', name: '文件转换', keywords: ['文件', '图片', 'base64', '哈希', 'hash'], icon: '📁' },
+  { id: 'fileconverter', name: '文件转换', keywords: ['文件', '图片', 'base64', '哈希', 'hash'], icon: '🔄' },
   { id: 'jwt', name: 'JWT 解码', keywords: ['jwt', 'token', '解码', '令牌', 'json web token'], icon: '🔑' },
+  { id: 'cron', name: 'Cron 解析', keywords: ['cron', '定时', '计划任务', '表达式'], icon: '⏱️' },
+  { id: 'diff', name: '文本对比', keywords: ['对比', '差异', 'diff', '比较'], icon: '📄' },
+  { id: 'datagen', name: '数据生成', keywords: ['生成', '模拟', '随机', '数据', 'mock'], icon: '🎲' },
+  { id: 'cssunit', name: 'CSS 单位转换', keywords: ['css', '单位', 'px', 'rem', 'em', '转换'], icon: '📐' },
+  { id: 'imgcompress', name: '图片压缩', keywords: ['图片', '压缩', '缩小', 'image', 'compress'], icon: '🖼️' },
+  { id: 'htmlentity', name: 'HTML 实体转换', keywords: ['html', '实体', '转义', 'entity', '&amp;'], icon: '🔣' },
+  { id: 'lottery', name: '抽奖工具', keywords: ['抽奖', '随机', '轮盘', '抽签'], icon: '🎰' },
   { id: 'storage', name: '历史与收藏', keywords: ['历史', '收藏', '记录', 'history'], icon: '📚' },
   { id: 'settings', name: '设置', keywords: ['设置', '主题', '配置', 'settings'], icon: '⚙️' },
 ]
@@ -82,8 +91,6 @@ const handleGlobalKeyDown = (e) => {
 watch(searchInput, () => {
   selectedIndex.value = 0
 })
-
-const emit = defineEmits(['select'])
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeyDown)

@@ -47,7 +47,7 @@ const dnsLoading = ref(false)
 const dnsTypes = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SOA']
 
 const lookupDns = async () => {
-  if (!dnsInput.value.trim()) return
+  if (!dnsInput.value.trim() || dnsLoading.value) return
 
   dnsLoading.value = true
   dnsResult.value = null
@@ -78,6 +78,7 @@ const ipResult = ref(null)
 const ipLoading = ref(false)
 
 const lookupMyIp = async () => {
+  if (ipLoading.value) return
   ipLoading.value = true
   ipResult.value = null
   try {

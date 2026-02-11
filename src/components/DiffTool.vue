@@ -43,9 +43,16 @@ const stats = computed(() => {
   return { added, deleted, unchanged }
 })
 
+const MAX_LINES = 5000
+
 const compare = () => {
   let origLines = originalText.value.split('\n')
   let modLines = modifiedText.value.split('\n')
+
+  if (origLines.length > MAX_LINES || modLines.length > MAX_LINES) {
+    showToast(`文本过长（最大 ${MAX_LINES} 行），请缩减后重试`, 'error')
+    return
+  }
 
   if (ignoreWhitespace.value) {
     origLines = origLines.map(line => line.replace(/\s+/g, ' ').trim())

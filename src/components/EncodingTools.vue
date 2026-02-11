@@ -7,7 +7,7 @@ const { showToast } = useToast()
 const { addHistory } = useHistory()
 
 const inputText = ref('')
-const encodingType = ref('base64')
+const encodingType = ref('base64-encode')
 const output = ref('')
 const error = ref('')
 

@@ -30,7 +30,9 @@
       "Bash(npx vite:*)",
       "Bash(ping:*)",
       "mcp__playwright__playwright_close",
-      "mcp__playwright__playwright_fill"
+      "mcp__playwright__playwright_fill",
+      "Bash(wc:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

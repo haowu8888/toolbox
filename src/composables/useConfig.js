@@ -46,6 +46,12 @@ export const useConfig = (key = 'toolbox_config') => {
 
   const importConfig = (file) => {
     return new Promise((resolve, reject) => {
+      // 限制文件大小（最大 5MB）
+      if (file.size > 5 * 1024 * 1024) {
+        reject(new Error('配置文件过大，最大支持 5MB'))
+        return
+      }
+
       const reader = new FileReader()
       reader.onload = (e) => {
         try {
@@ -55,11 +61,27 @@ export const useConfig = (key = 'toolbox_config') => {
             return
           }
 
+          // 校验数据类型
+          if (data.history && !Array.isArray(data.history)) {
+            reject(new Error('配置文件格式错误：history 应为数组'))
+            return
+          }
+          if (data.favorites && !Array.isArray(data.favorites)) {
+            reject(new Error('配置文件格式错误：favorites 应为数组'))
+            return
+          }
+          if (data.history && data.history.length > 500) {
+            data.history = data.history.slice(0, 500)
+          }
+          if (data.favorites && data.favorites.length > 500) {
+            data.favorites = data.favorites.slice(0, 500)
+          }
+
           // 导入所有数据
           localStorage.setItem('toolbox_config', JSON.stringify(data.config || {}))
           localStorage.setItem('toolbox_history', JSON.stringify(data.history || []))
           localStorage.setItem('toolbox_favorites', JSON.stringify(data.favorites || []))
-          localStorage.setItem('toolbox_theme', data.theme || 'light')
+          localStorage.setItem('toolbox_theme', data.theme === 'dark' ? 'dark' : 'light')
 
           resolve(data)
         } catch (err) {

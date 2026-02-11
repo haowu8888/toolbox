@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useHistory, useFavorites } from '../composables/useStorage'
 import { useToast } from '../composables/useToast'
 
@@ -10,6 +10,13 @@ const history = useHistory()
 const favorites = useFavorites()
 const confirmId = ref(null)
 let confirmTimer = null
+
+onUnmounted(() => {
+  if (confirmTimer) {
+    clearTimeout(confirmTimer)
+    confirmTimer = null
+  }
+})
 
 const historyList = history.historyList
 const favoriteList = favorites.favoriteList

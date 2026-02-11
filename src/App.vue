@@ -1,38 +1,50 @@
 <script setup>
-import { ref, watch, computed, onMounted, onUnmounted, markRaw } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, defineAsyncComponent, onErrorCaptured } from 'vue'
 import { useTheme } from './composables/useTheme'
+// 常驻UI组件保持静态导入
 import CommandPalette from './components/CommandPalette.vue'
 import ToastNotification from './components/ToastNotification.vue'
-import QRCodeGenerator from './components/QRCodeGenerator.vue'
-import JsonFormatter from './components/JsonFormatter.vue'
-import TextEncryption from './components/TextEncryption.vue'
-import EncodingTools from './components/EncodingTools.vue'
-import RegexTools from './components/RegexTools.vue'
-import MarkdownTools from './components/MarkdownTools.vue'
-import TimeTools from './components/TimeTools.vue'
-import ConversionTools from './components/ConversionTools.vue'
-import ColorTools from './components/ColorTools.vue'
-import ValidatorTools from './components/ValidatorTools.vue'
-import NetworkTools from './components/NetworkTools.vue'
-import NotesTools from './components/NotesTools.vue'
-import StoragePanel from './components/StoragePanel.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
-import TextToolsAdvanced from './components/TextToolsAdvanced.vue'
-import CalculatorTool from './components/CalculatorTool.vue'
-import CodeFormatterTools from './components/CodeFormatterTools.vue'
-import FileConverterTools from './components/FileConverterTools.vue'
-import JwtDecoder from './components/JwtDecoder.vue'
-import CronParser from './components/CronParser.vue'
-import DiffTool from './components/DiffTool.vue'
-import DataGenerator from './components/DataGenerator.vue'
-import CssUnitConverter from './components/CssUnitConverter.vue'
-import ImageCompressor from './components/ImageCompressor.vue'
-import HtmlEntityConverter from './components/HtmlEntityConverter.vue'
-import LotteryTool from './components/LotteryTool.vue'
+
+// 工具组件全部懒加载，按需加载减少首屏体积
+const QRCodeGenerator = defineAsyncComponent(() => import('./components/QRCodeGenerator.vue'))
+const JsonFormatter = defineAsyncComponent(() => import('./components/JsonFormatter.vue'))
+const TextEncryption = defineAsyncComponent(() => import('./components/TextEncryption.vue'))
+const EncodingTools = defineAsyncComponent(() => import('./components/EncodingTools.vue'))
+const RegexTools = defineAsyncComponent(() => import('./components/RegexTools.vue'))
+const MarkdownTools = defineAsyncComponent(() => import('./components/MarkdownTools.vue'))
+const TimeTools = defineAsyncComponent(() => import('./components/TimeTools.vue'))
+const ConversionTools = defineAsyncComponent(() => import('./components/ConversionTools.vue'))
+const ColorTools = defineAsyncComponent(() => import('./components/ColorTools.vue'))
+const ValidatorTools = defineAsyncComponent(() => import('./components/ValidatorTools.vue'))
+const NetworkTools = defineAsyncComponent(() => import('./components/NetworkTools.vue'))
+const NotesTools = defineAsyncComponent(() => import('./components/NotesTools.vue'))
+const StoragePanel = defineAsyncComponent(() => import('./components/StoragePanel.vue'))
+const SettingsPanel = defineAsyncComponent(() => import('./components/SettingsPanel.vue'))
+const TextToolsAdvanced = defineAsyncComponent(() => import('./components/TextToolsAdvanced.vue'))
+const CalculatorTool = defineAsyncComponent(() => import('./components/CalculatorTool.vue'))
+const CodeFormatterTools = defineAsyncComponent(() => import('./components/CodeFormatterTools.vue'))
+const FileConverterTools = defineAsyncComponent(() => import('./components/FileConverterTools.vue'))
+const JwtDecoder = defineAsyncComponent(() => import('./components/JwtDecoder.vue'))
+const CronParser = defineAsyncComponent(() => import('./components/CronParser.vue'))
+const DiffTool = defineAsyncComponent(() => import('./components/DiffTool.vue'))
+const DataGenerator = defineAsyncComponent(() => import('./components/DataGenerator.vue'))
+const CssUnitConverter = defineAsyncComponent(() => import('./components/CssUnitConverter.vue'))
+const ImageCompressor = defineAsyncComponent(() => import('./components/ImageCompressor.vue'))
+const HtmlEntityConverter = defineAsyncComponent(() => import('./components/HtmlEntityConverter.vue'))
+const LotteryTool = defineAsyncComponent(() => import('./components/LotteryTool.vue'))
+const ConfigConverter = defineAsyncComponent(() => import('./components/ConfigConverter.vue'))
 
 const { initTheme, isDark, toggleTheme } = useTheme()
 
 const activeTab = ref('qrcode')
+const componentError = ref(null)
+
+// 错误边界：捕获子组件渲染错误，避免整个应用崩溃
+onErrorCaptured((err) => {
+  componentError.value = err.message || '组件加载失败'
+  console.error('组件错误:', err)
+  return false
+})
 
 // Hash routing
 const toolIds = new Set()
@@ -58,14 +70,19 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('hashchange', onHashChange)
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
 })
 
 watch(activeTab, (newTab) => {
+  componentError.value = null
   window.location.hash = `#tool-${newTab}`
 })
 const hoveredCategory = ref(null)
 const expandedCategories = ref({
-  '基础工具': true,
+  '基础工具': false,
   '编码转换': false,
   '内容处理': false,
   '数据转换': false,
@@ -98,14 +115,18 @@ const tools = [
   { id: 'cssunit', name: 'CSS单位', icon: '📐', color: '#607d8b' },
   { id: 'imgcompress', name: '图片压缩', icon: '🖼️', color: '#8bc34a' },
   { id: 'htmlentity', name: 'HTML实体', icon: '🔣', color: '#795548' },
+  { id: 'configconvert', name: '配置转换', icon: '⚙️', color: '#ff9800' },
   { id: 'lottery', name: '抽奖工具', icon: '🎰', color: '#e91e63' },
   { id: 'storage', name: '历史/收藏', icon: '📚', color: '#4ecdc4' },
   { id: 'settings', name: '设置', icon: '⚙️', color: '#4ecdc4' },
 ]
 
+// O(1) 查找，替代模板中的 tools.find()
+const toolMap = new Map(tools.map(t => [t.id, t]))
+
 const categoryGroups = [
   { category: '基础工具', ids: ['qrcode', 'json'] },
-  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex', 'jwt', 'htmlentity'] },
+  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex', 'jwt', 'htmlentity', 'configconvert'] },
   { category: '内容处理', ids: ['markdown', 'diff'] },
   { category: '数据转换', ids: ['time', 'convert', 'color', 'cssunit'] },
   { category: '验证工具', ids: ['validator', 'network', 'cron'] },
@@ -114,32 +135,33 @@ const categoryGroups = [
 ]
 
 const toolComponentMap = {
-  qrcode: markRaw(QRCodeGenerator),
-  json: markRaw(JsonFormatter),
-  encrypt: markRaw(TextEncryption),
-  encoding: markRaw(EncodingTools),
-  regex: markRaw(RegexTools),
-  markdown: markRaw(MarkdownTools),
-  time: markRaw(TimeTools),
-  convert: markRaw(ConversionTools),
-  color: markRaw(ColorTools),
-  validator: markRaw(ValidatorTools),
-  network: markRaw(NetworkTools),
-  notes: markRaw(NotesTools),
-  textadvanced: markRaw(TextToolsAdvanced),
-  calculator: markRaw(CalculatorTool),
-  codeformatter: markRaw(CodeFormatterTools),
-  fileconverter: markRaw(FileConverterTools),
-  jwt: markRaw(JwtDecoder),
-  cron: markRaw(CronParser),
-  diff: markRaw(DiffTool),
-  datagen: markRaw(DataGenerator),
-  cssunit: markRaw(CssUnitConverter),
-  imgcompress: markRaw(ImageCompressor),
-  htmlentity: markRaw(HtmlEntityConverter),
-  lottery: markRaw(LotteryTool),
-  storage: markRaw(StoragePanel),
-  settings: markRaw(SettingsPanel),
+  qrcode: QRCodeGenerator,
+  json: JsonFormatter,
+  encrypt: TextEncryption,
+  encoding: EncodingTools,
+  regex: RegexTools,
+  markdown: MarkdownTools,
+  time: TimeTools,
+  convert: ConversionTools,
+  color: ColorTools,
+  validator: ValidatorTools,
+  network: NetworkTools,
+  notes: NotesTools,
+  textadvanced: TextToolsAdvanced,
+  calculator: CalculatorTool,
+  codeformatter: CodeFormatterTools,
+  fileconverter: FileConverterTools,
+  jwt: JwtDecoder,
+  cron: CronParser,
+  diff: DiffTool,
+  datagen: DataGenerator,
+  cssunit: CssUnitConverter,
+  imgcompress: ImageCompressor,
+  htmlentity: HtmlEntityConverter,
+  configconvert: ConfigConverter,
+  lottery: LotteryTool,
+  storage: StoragePanel,
+  settings: SettingsPanel,
 }
 
 const currentComponent = computed(() => toolComponentMap[activeTab.value])
@@ -196,11 +218,13 @@ const handleCommandSelect = (toolId) => {
     <!-- 快捷搜索面板 -->
     <CommandPalette @select="handleCommandSelect" />
 
-    <header class="header">
+    <header class="header" role="banner">
       <div class="header-content">
         <div class="header-top">
           <h1>✨ 工具箱</h1>
-          <button @click="toggleTheme" class="theme-toggle" :title="isDark ? '切换为亮色' : '切换为深色'">
+          <button @click="toggleTheme" class="theme-toggle"
+            :title="isDark ? '切换为亮色' : '切换为深色'"
+            :aria-label="isDark ? '切换为亮色主题' : '切换为深色主题'">
             {{ isDark ? '☀️' : '🌙' }}
           </button>
         </div>
@@ -209,7 +233,7 @@ const handleCommandSelect = (toolId) => {
       </div>
     </header>
 
-    <nav class="nav">
+    <nav class="nav" role="navigation" aria-label="工具导航">
       <div v-for="group in categoryGroups" :key="group.category" class="nav-group"
            @mouseenter="handleMouseEnter(group.category)"
            @mouseleave="handleMouseLeave(group.category)">
@@ -217,11 +241,14 @@ const handleCommandSelect = (toolId) => {
           class="category-btn"
           @click="toggleCategory(group.category)"
           :class="{ expanded: expandedCategories[group.category] }"
+          :aria-expanded="expandedCategories[group.category]"
+          :aria-label="`${group.category}分类`"
         >
           <span class="category-name">{{ group.category }}</span>
-          <span class="expand-icon">{{ expandedCategories[group.category] ? '▼' : '▶' }}</span>
+          <span class="expand-icon" aria-hidden="true">{{ expandedCategories[group.category] ? '▼' : '▶' }}</span>
         </button>
-        <div v-show="expandedCategories[group.category]" class="nav-buttons"
+        <div v-show="expandedCategories[group.category]" class="nav-buttons" role="group"
+             :aria-label="`${group.category}工具列表`"
              @mouseenter="handleMouseEnter(group.category)"
              @mouseleave="handleMouseLeave(group.category)">
           <button
@@ -229,25 +256,31 @@ const handleCommandSelect = (toolId) => {
             :key="toolId"
             :class="['nav-btn', { active: activeTab === toolId }]"
             @click="activeTab = toolId; expandedCategories[group.category] = false"
-            :style="{ '--btn-color': tools.find(t => t.id === toolId)?.color }"
+            :style="{ '--btn-color': toolMap.get(toolId)?.color }"
+            :aria-label="toolMap.get(toolId)?.name"
+            :aria-current="activeTab === toolId ? 'page' : undefined"
           >
-            <span class="nav-icon">{{ tools.find(t => t.id === toolId)?.icon }}</span>
-            <span class="nav-text">{{ tools.find(t => t.id === toolId)?.name }}</span>
+            <span class="nav-icon" aria-hidden="true">{{ toolMap.get(toolId)?.icon }}</span>
+            <span class="nav-text">{{ toolMap.get(toolId)?.name }}</span>
           </button>
         </div>
       </div>
     </nav>
 
-    <main class="content">
+    <main class="content" role="main">
       <div class="tool-panel">
-        <KeepAlive :max="10">
+        <div v-if="componentError" class="error-boundary" role="alert">
+          <p>{{ componentError }}</p>
+          <button @click="componentError = null">重试</button>
+        </div>
+        <KeepAlive v-else :max="10">
           <component :is="currentComponent" :key="activeTab" v-bind="currentComponentProps" />
         </KeepAlive>
       </div>
     </main>
 
-    <footer class="footer">
-      <p>© 2025 工具箱 | Made with ❤️ for developers | {{ tools.length }} 工具 | 完全隐私 | 离线可用</p>
+    <footer class="footer" role="contentinfo">
+      <p>&copy; {{ new Date().getFullYear() }} 工具箱 | Made with ❤️ for developers | {{ tools.length }} 工具 | 完全隐私 | 离线可用</p>
     </footer>
   </div>
 </template>
@@ -590,6 +623,27 @@ const handleCommandSelect = (toolId) => {
 
 .tool-panel {
   animation: fadeIn 0.3s ease-in-out;
+}
+
+.error-boundary {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: #ff6b6b;
+}
+
+.error-boundary p {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.error-boundary button {
+  background: #4ecdc4;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
 }
 
 .footer {
