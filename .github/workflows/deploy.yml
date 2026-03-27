@@ -32,6 +32,14 @@ jobs:
       - name: Build step
         run: "npm run build"
 
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check Deno server
+        run: "deno check server.ts"
+
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with:
@@ -68,7 +76,7 @@ jobs:
         uses: denoland/deployctl@v1
         with:
           project: "wzh-toolbox-89"
-          entrypoint: "https://deno.land/std@0.217.0/http/file_server.ts"
-          root: "dist"
+          entrypoint: "server.ts"
+          root: "."
           
           

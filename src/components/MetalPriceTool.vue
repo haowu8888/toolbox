@@ -194,7 +194,7 @@ onUnmounted(() => {
       <div>
         <h2>金属行情</h2>
         <p class="description">实时查看黄金、白银、铜价格，并补一眼日 / 周 / 月 / 年趋势。</p>
-        <p class="source-note">数据源：gold-api / Frankfurter / Yahoo Finance chart（经 corsproxy.io 浏览器代理）</p>
+        <p class="source-note">数据源：gold-api / Frankfurter / Yahoo Finance chart（经站点同源代理）</p>
       </div>
 
       <div class="hero-actions">

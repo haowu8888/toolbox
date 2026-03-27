@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const TREND_PROXY_PATH = '/api/finance/chart'
+const YAHOO_FINANCE_ORIGIN = 'https://query1.finance.yahoo.com'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -47,6 +50,13 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 3455,
     strictPort: true,
+    proxy: {
+      [TREND_PROXY_PATH]: {
+        target: YAHOO_FINANCE_ORIGIN,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(TREND_PROXY_PATH, '/v8/finance/chart'),
+      },
+    },
   },
   build: {
     target: 'es2020',
@@ -57,8 +67,8 @@ export default defineConfig({
           'vendor-crypto': ['crypto-js'],
           'vendor-markdown': ['markdown-it'],
           'vendor-qrcode': ['qrcode'],
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 })

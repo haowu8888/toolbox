@@ -18,12 +18,12 @@ describe('metalTrend fetch contract', () => {
     expect(buildHistoryCacheKey('XAU', 'month')).toBe('XAU:month')
   })
 
-  it('builds a CORS proxy request for Yahoo chart data', () => {
+  it('builds a same-origin request for Yahoo chart data', () => {
     const url = buildTrendRequestUrl('GC=F', 'month')
 
-    expect(url).toContain('corsproxy.io/?')
-    expect(url).toContain(encodeURIComponent('range=1mo'))
-    expect(url).toContain(encodeURIComponent('interval=1d'))
+    expect(url).toContain('/api/finance/chart/GC%3DF?')
+    expect(url).toContain('range=1mo')
+    expect(url).toContain('interval=1d')
   })
 
   it('exposes the supported range config', () => {

@@ -1,5 +1,4 @@
-const CORS_PROXY_BASE = 'https://corsproxy.io/?'
-const YAHOO_CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart'
+const TREND_PROXY_PATH = '/api/finance/chart'
 
 export const TREND_RANGE_CONFIG = Object.freeze({
   day: { range: '1d', interval: '5m' },
@@ -35,8 +34,12 @@ export const buildHistoryCacheKey = (symbol, range) => `${symbol}:${range}`
 
 export const buildTrendRequestUrl = (ticker, range) => {
   const { interval, range: windowRange } = getTrendConfig(range)
-  const yahooUrl = `${YAHOO_CHART_BASE}/${ticker}?interval=${interval}&range=${windowRange}`
-  return `${CORS_PROXY_BASE}${encodeURIComponent(yahooUrl)}`
+  const encodedTicker = encodeURIComponent(ticker)
+  const searchParams = new URLSearchParams({
+    interval,
+    range: windowRange,
+  })
+  return `${TREND_PROXY_PATH}/${encodedTicker}?${searchParams.toString()}`
 }
 
 export const parseTrendPayload = (payload, metalDef, range) => {
