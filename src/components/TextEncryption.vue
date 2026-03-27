@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import CryptoJS from 'crypto-js'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
@@ -9,7 +9,6 @@ const { addHistory } = useHistory()
 
 const activeMode = ref('hash')
 const inputText = ref('')
-const encryptType = ref('md5')
 const results = ref({})
 
 const algorithms = {

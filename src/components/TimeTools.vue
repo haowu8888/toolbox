@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 

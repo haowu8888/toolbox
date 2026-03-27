@@ -7,7 +7,8 @@ const { showToast } = useToast()
 const { addHistory } = useHistory()
 
 const inputCode = ref('')
-const codeType = ref('json')
+const activeMode = ref('format')
+const formatType = ref('json')
 const indentSize = ref(2)
 const output = ref('')
 const sqlUppercase = ref(true)
@@ -297,13 +298,13 @@ const format = () => {
   }
 
   try {
-    if (codeType.value === 'json') {
+    if (formatType.value === 'json') {
       output.value = formatJSON(inputCode.value)
-    } else if (codeType.value === 'sql') {
+    } else if (formatType.value === 'sql') {
       output.value = formatSQL(inputCode.value)
-    } else if (codeType.value === 'html') {
+    } else if (formatType.value === 'html') {
       output.value = formatHTML(inputCode.value)
-    } else if (codeType.value === 'xml') {
+    } else if (formatType.value === 'xml') {
       output.value = formatXML(inputCode.value)
     }
     addHistory('代码格式化', output.value)
@@ -323,7 +324,7 @@ const copyToClipboard = async (text) => {
 
 const minify = () => {
   try {
-    if (codeType.value === 'json') {
+    if (formatType.value === 'json') {
       const parsed = JSON.parse(inputCode.value)
       output.value = JSON.stringify(parsed)
     } else {
@@ -349,21 +350,33 @@ const clearAll = () => {
     <h2>💻 代码工具</h2>
     <p class="description">格式化、对比、优化代码</p>
 
-    <div class="tabs">
+    <div class="tabs" role="tablist" aria-label="代码工具模式">
       <button
         v-for="tab in ['format', 'compare']"
         :key="tab"
-        :class="['tab-btn', { active: codeType.includes(tab) || (tab === 'format' && codeType !== 'compare') }]"
-        @click="codeType = tab === 'compare' ? 'json' : tab"
+        type="button"
+        role="tab"
+        :id="`code-tab-${tab}`"
+        :aria-controls="`code-panel-${tab}`"
+        :aria-selected="activeMode === tab"
+        :aria-label="tab === 'format' ? '切换到格式化模式' : '切换到对比模式'"
+        :class="['tab-btn', { active: activeMode === tab }]"
+        @click="activeMode = tab"
       >
         {{ tab === 'format' ? '✨ 格式化' : '🔍 对比' }}
       </button>
     </div>
 
     <!-- 格式化模式 -->
-    <div v-if="codeType !== 'compare'" class="tool-section">
+    <div
+      v-if="activeMode === 'format'"
+      id="code-panel-format"
+      class="tool-section"
+      role="tabpanel"
+      aria-labelledby="code-tab-format"
+    >
       <div class="controls">
-        <select v-model="codeType" class="select-field">
+        <select v-model="formatType" class="select-field" aria-label="代码类型">
           <option value="json">JSON</option>
           <option value="sql">SQL</option>
           <option value="html">HTML</option>
@@ -375,7 +388,7 @@ const clearAll = () => {
         </label>
         <button @click="format" class="btn btn-primary">✨ 格式化</button>
         <button @click="minify" class="btn btn-secondary">📦 压缩</button>
-        <label v-if="codeType === 'sql'" class="checkbox-label">
+        <label v-if="formatType === 'sql'" class="checkbox-label">
           <input type="checkbox" v-model="sqlUppercase" />
           关键字大写
         </label>
@@ -404,7 +417,13 @@ const clearAll = () => {
     </div>
 
     <!-- 对比模式 -->
-    <div v-else class="tool-section">
+    <div
+      v-else
+      id="code-panel-compare"
+      class="tool-section"
+      role="tabpanel"
+      aria-labelledby="code-tab-compare"
+    >
       <div class="editor-pair-compare">
         <div class="editor">
           <div class="editor-label">代码 1</div>

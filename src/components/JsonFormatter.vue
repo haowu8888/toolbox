@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 
@@ -13,6 +13,7 @@ const formatType = ref('pretty')
 const viewMode = ref('text') // 'text' | 'tree'
 const parsedData = ref(null)
 const collapsedPaths = ref(new Set())
+let formatTimer = null
 
 const formatJson = () => {
   if (!inputJson.value.trim()) {
@@ -128,9 +129,23 @@ const loadFile = (event) => {
   reader.readAsText(file)
 }
 
-const handleInputChange = () => {
-  formatJson()
+const scheduleFormat = () => {
+  if (formatTimer) clearTimeout(formatTimer)
+  formatTimer = setTimeout(() => {
+    formatTimer = null
+    formatJson()
+  }, 150)
 }
+
+watch(inputJson, scheduleFormat)
+watch(formatType, formatJson)
+
+onUnmounted(() => {
+  if (formatTimer) {
+    clearTimeout(formatTimer)
+    formatTimer = null
+  }
+})
 
 // 树形视图递归渲染数据
 const getEntries = (data) => {
@@ -186,7 +201,6 @@ const getPreview = (data) => {
         <div class="editor-label">输入</div>
         <textarea
           v-model="inputJson"
-          @input="handleInputChange"
           placeholder="粘贴你的 JSON 内容或上传文件"
           class="editor-textarea"
         ></textarea>

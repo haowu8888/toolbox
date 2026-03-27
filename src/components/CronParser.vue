@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 
@@ -21,7 +21,6 @@ const quickPatterns = [
 ]
 
 const weekDayNames = ['日', '一', '二', '三', '四', '五', '六']
-const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 
 const cronFields = computed(() => {
   const parts = cronExpression.value.trim().split(/\s+/)
@@ -183,27 +182,6 @@ const expandField = (field, min, max) => {
   }
 
   return result
-}
-
-/**
- * Check whether a given Date matches the cron expression
- */
-const matchesCron = (date, fields) => {
-  const [minuteField, hourField, dayField, monthField, weekdayField] = fields
-
-  const minuteSet = expandField(minuteField, 0, 59)
-  const hourSet = expandField(hourField, 0, 23)
-  const daySet = expandField(dayField, 1, 31)
-  const monthSet = expandField(monthField, 1, 12)
-  const weekdaySet = expandField(weekdayField, 0, 6)
-
-  const m = date.getMinutes()
-  const h = date.getHours()
-  const d = date.getDate()
-  const mon = date.getMonth() + 1
-  const w = date.getDay()
-
-  return minuteSet.has(m) && hourSet.has(h) && daySet.has(d) && monthSet.has(mon) && weekdaySet.has(w)
 }
 
 const nextExecutions = computed(() => {

@@ -8,6 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build for production**: `npm run build`
 - **Preview built files locally**: `npm run preview`
 - **Install dependencies**: `npm install`
+- **Lint**: `npm run lint`
+- **Run tests (CI mode)**: `npm run test:run`
+- **E2E smoke tests**: `npm run e2e` (first time: `npx playwright install chromium`)
+- **Format (Prettier)**: `npm run format`
 
 ## Project Overview
 

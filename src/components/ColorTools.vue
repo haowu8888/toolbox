@@ -169,8 +169,6 @@ const palettes = [
   { name: '自然', colors: ['#264653', '#2a9d8f', '#e9c46a', '#f4a261', '#e76f51'] },
 ]
 
-const schemes = ref([])
-
 const generateComplementary = () => {
   const h = (hslInput.value.h + 180) % 360
   return rgbToHex(...Object.values(hslToRgb(h, hslInput.value.s, hslInput.value.l)))
@@ -254,7 +252,7 @@ const hslString = computed(() => {
     <!-- 颜色转换 -->
     <div v-show="activeTab === 'convert'" class="section">
       <div class="color-preview">
-        <input v-model="colorInput" type="color" class="color-picker" />
+        <input v-model="colorInput" type="color" class="color-picker" aria-label="颜色选择器" />
         <div class="color-display" :style="{ backgroundColor: colorInput }"></div>
       </div>
 
@@ -262,7 +260,7 @@ const hslString = computed(() => {
         <div class="input-group">
           <label>HEX</label>
           <div class="input-with-btn">
-            <input v-model="colorInput" type="text" class="input-field" />
+            <input v-model="colorInput" type="text" class="input-field" aria-label="HEX 输入" />
             <button @click="copyToClipboard(colorInput)" class="btn-copy">📋</button>
           </div>
         </div>

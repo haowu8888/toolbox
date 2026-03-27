@@ -67,7 +67,9 @@ const filteredNotes = computed(() => {
     const pa = priorityOrder[a.priority || 'normal'] ?? 1
     const pb = priorityOrder[b.priority || 'normal'] ?? 1
     if (pa !== pb) return pa - pb
-    return new Date(b.updatedAt) - new Date(a.updatedAt)
+    const dateA = new Date(a.updatedAt || a.createdAt || 0)
+    const dateB = new Date(b.updatedAt || b.createdAt || 0)
+    return dateB - dateA
   })
 })
 
@@ -200,9 +202,10 @@ const toggleEditTag = (tag) => {
 }
 
 const formatDate = (date) => {
-  if (typeof date === 'string') {
-    date = new Date(date)
-  }
+  if (!date) return ''
+  if (typeof date === 'string' || typeof date === 'number') date = new Date(date)
+  if (!(date instanceof Date)) date = new Date(date)
+  if (Number.isNaN(date.getTime())) return ''
   const now = new Date()
   const diff = now - date
 

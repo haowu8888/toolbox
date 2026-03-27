@@ -23,7 +23,7 @@ const validators = {
   },
   url: {
     name: 'URL 验证',
-    pattern: /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/,
+    pattern: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
     description: '验证URL格式是否正确',
   },
   phone_int: {

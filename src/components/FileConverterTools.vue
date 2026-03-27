@@ -131,12 +131,14 @@ const clearAll = () => {
     </div>
 
     <!-- 图片转 Base64 -->
-    <div v-show="toolType === 'image-base64'" class="tool-section">
+    <div v-if="toolType === 'image-base64'" class="tool-section">
       <div class="upload-section">
         <label class="upload-btn">
           <input
             type="file"
             accept="image/*"
+            aria-label="选择图片文件"
+            data-testid="image-file-input"
             @change="handleImageSelect"
             style="display: none"
           />
@@ -166,7 +168,7 @@ const clearAll = () => {
     </div>
 
     <!-- Base64 转图片 -->
-    <div v-show="toolType === 'base64-image'" class="tool-section">
+    <div v-else-if="toolType === 'base64-image'" class="tool-section">
       <textarea
         v-model="base64Input"
         placeholder="粘贴 Base64 图片数据（应以 data:image 开头）..."
@@ -183,12 +185,14 @@ const clearAll = () => {
     </div>
 
     <!-- 文件哈希 -->
-    <div v-show="toolType === 'file-hash'" class="tool-section">
+    <div v-else class="tool-section">
       <div class="upload-section">
         <label class="upload-btn">
           <input
             ref="fileInput"
             type="file"
+            aria-label="选择文件计算哈希"
+            data-testid="hash-file-input"
             @change="handleFileSelect"
             style="display: none"
           />

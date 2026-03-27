@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { sanitizeHtml } from '../utils/sanitizeHtml'
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
@@ -15,17 +16,39 @@ const markdown = new MarkdownIt({
 
 const inputMarkdown = ref('')
 const view = ref('split')
+const htmlOutput = ref('')
+let renderTimer = null
 
-const htmlOutput = () => {
+const render = () => {
   if (!inputMarkdown.value.trim()) {
-    return ''
+    htmlOutput.value = ''
+    return
   }
   try {
-    return markdown.render(inputMarkdown.value)
+    htmlOutput.value = sanitizeHtml(markdown.render(inputMarkdown.value))
   } catch (err) {
-    return `<p style="color: red;">错误：${err.message}</p>`
+    htmlOutput.value = `<p style="color: red;">错误：${err.message}</p>`
   }
 }
+
+watch(
+  inputMarkdown,
+  () => {
+    if (renderTimer) clearTimeout(renderTimer)
+    renderTimer = setTimeout(() => {
+      renderTimer = null
+      render()
+    }, 150)
+  },
+  { flush: 'post' },
+)
+
+onUnmounted(() => {
+  if (renderTimer) {
+    clearTimeout(renderTimer)
+    renderTimer = null
+  }
+})
 
 const downloadMarkdown = () => {
   if (!inputMarkdown.value) {
@@ -42,7 +65,7 @@ const downloadMarkdown = () => {
 }
 
 const downloadHtml = () => {
-  const html = htmlOutput()
+  const html = htmlOutput.value
   if (!html) {
     showToast('请输入 Markdown 内容', 'info')
     return
@@ -128,7 +151,7 @@ const downloadHtml = () => {
 }
 
 const copyHtmlToClipboard = async () => {
-  const html = htmlOutput()
+  const html = htmlOutput.value
   if (!html) {
     showToast('请输入 Markdown 内容', 'info')
     return
@@ -202,18 +225,19 @@ const insertTemplate = (template) => {
         ></textarea>
         <div class="quick-insert">
           <span class="quick-insert-label">快速插入：</span>
-          <button @click="insertTemplate('# '), style='font-size: 0.8em'" class="quick-btn">H1</button>
-          <button @click="insertTemplate('## '), style='font-size: 0.8em'" class="quick-btn">H2</button>
-          <button @click="insertTemplate('**粗体**'), style='font-size: 0.8em'" class="quick-btn">B</button>
-          <button @click="insertTemplate('*斜体*'), style='font-size: 0.8em'" class="quick-btn">I</button>
-          <button @click="insertTemplate('[链接](url) '), style='font-size: 0.8em'" class="quick-btn">Link</button>
-          <button @click="insertTemplate('- 列表项\n'), style='font-size: 0.8em'" class="quick-btn">List</button>
+          <button @click="insertTemplate('# ')" class="quick-btn">H1</button>
+          <button @click="insertTemplate('## ')" class="quick-btn">H2</button>
+          <button @click="insertTemplate('**粗体**')" class="quick-btn">B</button>
+          <button @click="insertTemplate('*斜体*')" class="quick-btn">I</button>
+          <button @click="insertTemplate('[链接](url) ')" class="quick-btn">Link</button>
+          <button @click="insertTemplate('- 列表项\n')" class="quick-btn">List</button>
         </div>
       </div>
 
       <div v-if="view === 'split' || view === 'preview'" class="preview-pane">
         <div class="pane-header">预览</div>
-        <div class="markdown-preview" v-html="htmlOutput()"></div>
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <div class="markdown-preview" v-html="htmlOutput"></div>
       </div>
     </div>
   </div>

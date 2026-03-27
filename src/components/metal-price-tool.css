@@ -1,0 +1,175 @@
+.metal-price-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hero-card,
+.price-card,
+.status-bar {
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.hero-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem;
+}
+
+.hero-card h2,
+.description,
+.source-note {
+  margin: 0;
+}
+
+.description,
+.source-note,
+.status-bar,
+.card-header p,
+.card-footer {
+  color: #5f6b7a;
+}
+
+.hero-actions,
+.range-switch,
+.status-bar,
+.price-grid,
+.price-row,
+.card-header,
+.card-footer,
+.trend-grid {
+  display: flex;
+}
+
+.hero-actions {
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.range-switch {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.range-btn.active,
+.metal-refresh-btn {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+}
+
+.status-bar {
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  font-size: 0.9rem;
+}
+
+.status-error {
+  margin: 0;
+  color: #b42318;
+}
+
+.price-grid,
+.trend-grid {
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.price-card,
+.trend-grid .metal-trend-chart {
+  flex: 1 1 280px;
+}
+
+.price-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-color: color-mix(in srgb, var(--accent) 22%, #ffffff);
+}
+
+.card-header h3,
+.card-header p,
+.card-footer,
+.card-error {
+  margin: 0;
+}
+
+.card-badge {
+  align-self: flex-start;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, #ffffff);
+  color: color-mix(in srgb, var(--accent) 72%, #223);
+  font-size: 0.82rem;
+}
+
+.price-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.price-row {
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.price-row span {
+  min-width: 64px;
+}
+
+.price-row strong {
+  margin-left: auto;
+}
+
+.copy-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.card-footer {
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+}
+
+.card-error {
+  color: #b42318;
+  font-size: 0.92rem;
+}
+
+:root[data-theme='dark'] .hero-card,
+:root[data-theme='dark'] .price-card,
+:root[data-theme='dark'] .status-bar {
+  background: rgba(17, 24, 39, 0.94);
+  border-color: rgba(51, 65, 85, 0.88);
+  box-shadow: 0 18px 38px rgba(2, 6, 23, 0.3);
+}
+
+:root[data-theme='dark'] .description,
+:root[data-theme='dark'] .source-note,
+:root[data-theme='dark'] .status-bar,
+:root[data-theme='dark'] .card-header p,
+:root[data-theme='dark'] .card-footer {
+  color: #94a3b8;
+}
+
+@media (max-width: 768px) {
+  .hero-card {
+    flex-direction: column;
+  }
+
+  .hero-actions {
+    align-items: stretch;
+  }
+
+  .price-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+  }
+}

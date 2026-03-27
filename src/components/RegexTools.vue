@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { sanitizeHtml } from '../utils/sanitizeHtml'
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
@@ -13,6 +14,11 @@ const output = ref('')
 const error = ref('')
 const matches = ref([])
 const replaceText = ref('')
+
+const safeHighlightedOutput = computed(() => {
+  if (!output.value.includes('<mark>')) return ''
+  return sanitizeHtml(output.value)
+})
 
 const testRegex = () => {
   if (!pattern.value.trim() || !testText.value.trim()) {
@@ -200,11 +206,8 @@ const clearAll = () => {
       <div v-if="output" class="output-section">
         <h3>输出</h3>
         <div class="output-content">
-          <div
-            v-if="output.includes('<mark>')"
-            class="html-render"
-            v-html="output"
-          ></div>
+          <!-- eslint-disable-next-line vue/no-v-html -->
+          <div v-if="safeHighlightedOutput" class="html-render" v-html="safeHighlightedOutput"></div>
           <code v-else class="output-text">{{ output }}</code>
         </div>
       </div>

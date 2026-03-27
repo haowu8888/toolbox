@@ -1,5 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { tools as toolMeta } from '../tools/meta.js'
+import { safeParseJson, STORAGE_KEYS } from '../utils/storageKeys'
 
 const emit = defineEmits(['select'])
 
@@ -7,45 +9,82 @@ const showSearch = ref(false)
 const searchInput = ref('')
 const selectedIndex = ref(0)
 const searchInputRef = ref(null)
+const recentToolIds = ref([])
 
-const tools = [
-  { id: 'qrcode', name: '二维码生成', keywords: ['二维码', 'qrcode', '生成'], icon: '📱' },
-  { id: 'json', name: 'JSON 格式化', keywords: ['json', '格式化', 'format'], icon: '📄' },
-  { id: 'encrypt', name: '文本加密', keywords: ['加密', '密码', 'encrypt', 'md5', 'sha'], icon: '🔐' },
-  { id: 'encoding', name: '编码/解码', keywords: ['编码', '解码', 'base64', 'url'], icon: '🔤' },
-  { id: 'regex', name: '正则表达式', keywords: ['正则', 'regex', '表达式'], icon: '🔍' },
-  { id: 'markdown', name: 'Markdown', keywords: ['markdown', 'md', '预览'], icon: '📝' },
-  { id: 'time', name: '时间工具', keywords: ['时间', '时间戳', '日期', 'time'], icon: '⏰' },
-  { id: 'convert', name: '单位转换', keywords: ['转换', '长度', '温度', '重量', 'convert'], icon: '🔄' },
-  { id: 'color', name: '颜色工具', keywords: ['颜色', '色彩', 'color', 'hex', 'rgb'], icon: '🎨' },
-  { id: 'validator', name: '数据验证', keywords: ['验证', '邮箱', '手机', 'email', 'validator'], icon: '✔️' },
-  { id: 'network', name: '网络工具', keywords: ['网络', 'url', 'dns', '编码', 'network'], icon: '🌐' },
-  { id: 'notes', name: '笔记 & TODO', keywords: ['笔记', '待办', '任务', 'notes', 'todo'], icon: '📝' },
-  { id: 'textadvanced', name: '文本处理', keywords: ['文本', 'uuid', '密码', '去重', '大小写'], icon: '✨' },
-  { id: 'calculator', name: '计算器', keywords: ['计算', '计算器', 'calculator', '数学'], icon: '🧮' },
-  { id: 'codeformatter', name: '代码工具', keywords: ['代码', '格式化', 'sql', 'html', 'xml', '对比'], icon: '💻' },
-  { id: 'fileconverter', name: '文件转换', keywords: ['文件', '图片', 'base64', '哈希', 'hash'], icon: '🔄' },
-  { id: 'jwt', name: 'JWT 解码', keywords: ['jwt', 'token', '解码', '令牌', 'json web token'], icon: '🔑' },
-  { id: 'cron', name: 'Cron 解析', keywords: ['cron', '定时', '计划任务', '表达式'], icon: '⏱️' },
-  { id: 'diff', name: '文本对比', keywords: ['对比', '差异', 'diff', '比较'], icon: '📄' },
-  { id: 'datagen', name: '数据生成', keywords: ['生成', '模拟', '随机', '数据', 'mock'], icon: '🎲' },
-  { id: 'cssunit', name: 'CSS 单位转换', keywords: ['css', '单位', 'px', 'rem', 'em', '转换'], icon: '📐' },
-  { id: 'imgcompress', name: '图片压缩', keywords: ['图片', '压缩', '缩小', 'image', 'compress'], icon: '🖼️' },
-  { id: 'htmlentity', name: 'HTML 实体转换', keywords: ['html', '实体', '转义', 'entity', '&amp;'], icon: '🔣' },
-  { id: 'lottery', name: '抽奖工具', keywords: ['抽奖', '随机', '轮盘', '抽签'], icon: '🎰' },
-  { id: 'storage', name: '历史与收藏', keywords: ['历史', '收藏', '记录', 'history'], icon: '📚' },
-  { id: 'settings', name: '设置', keywords: ['设置', '主题', '配置', 'settings'], icon: '⚙️' },
-]
+const keywordMap = {
+  qrcode: ['二维码', 'qrcode', '生成'],
+  json: ['json', '格式化', 'format'],
+  encrypt: ['加密', '密码', 'encrypt', 'md5', 'sha'],
+  encoding: ['编码', '解码', 'base64', 'url'],
+  regex: ['正则', 'regex', '表达式'],
+  markdown: ['markdown', 'md', '预览'],
+  time: ['时间', '时间戳', '日期', 'time'],
+  convert: ['转换', '长度', '温度', '重量', 'convert'],
+  color: ['颜色', '色彩', 'color', 'hex', 'rgb'],
+  validator: ['验证', '邮箱', '手机', 'email', 'validator'],
+  network: ['网络', 'dns', 'ip', 'network'],
+  urltools: ['url', 'query', 'querystring', 'encode', 'decode', '解析', '参数'],
+  csvjson: ['csv', 'tsv', 'json', '转换', '表格'],
+  curlfetch: ['curl', 'fetch', '转换', '请求'],
+  chmod: ['chmod', '权限', 'rwx', '755', '644', '4755'],
+  notes: ['笔记', '待办', '任务', 'notes', 'todo'],
+  textadvanced: ['文本', 'uuid', '密码', '去重', '大小写'],
+  calculator: ['计算', '计算器', 'calculator', '数学'],
+  codeformatter: ['代码', '格式化', 'sql', 'html', 'xml', '对比'],
+  fileconverter: ['文件', '图片', 'base64', '哈希', 'hash'],
+  jwt: ['jwt', 'token', '解码', '令牌', 'json web token'],
+  cron: ['cron', '定时', '计划任务', '表达式'],
+  diff: ['对比', '差异', 'diff', '比较'],
+  datagen: ['生成', '模拟', '随机', '数据', 'mock'],
+  cssunit: ['css', '单位', 'px', 'rem', 'em', '转换'],
+  imgcompress: ['图片', '压缩', '缩小', 'image', 'compress'],
+  htmlentity: ['html', '实体', '转义', 'entity', '&amp;'],
+  configconvert: ['配置', 'json', 'yaml', 'toml', '转换'],
+  lottery: ['抽奖', '随机', '轮盘', '抽签'],
+  storage: ['历史', '收藏', '记录', 'history'],
+  settings: ['设置', '主题', '配置', 'settings'],
+}
+
+const nameOverrideMap = {
+  qrcode: '二维码生成',
+  json: 'JSON 格式化',
+}
+
+const tools = toolMeta.map((t) => ({
+  id: t.id,
+  name: nameOverrideMap[t.id] || t.name,
+  keywords: keywordMap[t.id] || [],
+  icon: t.icon,
+}))
+
+const getRecentRank = (toolId) => {
+  const index = recentToolIds.value.indexOf(toolId)
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
+
+const sortToolsByRecent = (items) =>
+  [...items].sort((left, right) => {
+    const rankDiff = getRecentRank(left.id) - getRecentRank(right.id)
+    if (rankDiff !== 0) return rankDiff
+    return tools.findIndex((tool) => tool.id === left.id) - tools.findIndex((tool) => tool.id === right.id)
+  })
+
+const loadRecentTools = () => {
+  const raw = localStorage.getItem(STORAGE_KEYS.recentTools)
+  const ids = safeParseJson(raw, [])
+  recentToolIds.value = Array.isArray(ids) ? ids : []
+}
 
 const filteredTools = computed(() => {
-  if (!searchInput.value.trim()) return tools
+  if (!searchInput.value.trim()) return sortToolsByRecent(tools)
 
   const query = searchInput.value.toLowerCase()
-  return tools.filter(tool =>
+  const matches = tools.filter(tool =>
     tool.name.toLowerCase().includes(query) ||
     tool.id.toLowerCase().includes(query) ||
-    tool.keywords.some(kw => kw.includes(query))
+    tool.keywords.some(kw => kw.toLowerCase().includes(query))
   )
+  return sortToolsByRecent(matches)
 })
 
 const handleKeyDown = (e) => {
@@ -69,6 +108,7 @@ const selectTool = (tool) => {
 }
 
 const openSearch = () => {
+  loadRecentTools()
   showSearch.value = true
   selectedIndex.value = 0
   searchInput.value = ''
@@ -145,6 +185,7 @@ onUnmounted(() => {
               v-for="(tool, index) in filteredTools"
               :key="tool.id"
               :class="['result-item', { active: index === selectedIndex }]"
+              :data-tool-id="tool.id"
               @click="selectTool(tool)"
               @mousemove="selectedIndex = index"
             >

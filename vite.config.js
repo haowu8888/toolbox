@@ -1,11 +1,52 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png'],
+      manifest: {
+        name: '工具箱 - 开发者在线工具集',
+        short_name: '工具箱',
+        description:
+          '免费在线开发者工具箱：二维码、JSON、加密、编码、正则、Markdown、时间/单位转换、验证、文件处理等。',
+        theme_color: '#4ecdc4',
+        background_color: '#ffffff',
+        display: 'standalone',
+        start_url: '/',
+        icons: [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,json,txt,woff2}'],
+        navigateFallback: '/index.html',
+      },
+    }),
+  ],
   server: {
-    host: '127.0.0.1'
+    host: '127.0.0.1',
+    port: 3455,
+    strictPort: true,
   },
   build: {
     target: 'es2020',

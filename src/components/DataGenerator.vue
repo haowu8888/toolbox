@@ -120,7 +120,6 @@ const dataType = ref('email')
 const dataResult = ref([])
 
 const generateEmail = () => {
-  const name = generateName()
   const pinyin = ['wang', 'li', 'zhang', 'liu', 'chen', 'yang', 'zhao', 'huang', 'zhou', 'wu', 'xu', 'sun', 'hu', 'zhu', 'gao', 'lin', 'he', 'guo', 'ma', 'luo']
   const domains = ['qq.com', '163.com', 'gmail.com', 'outlook.com', 'foxmail.com', '126.com', 'sina.com']
   const prefix = randomPick(pinyin) + randomInt(100, 9999)

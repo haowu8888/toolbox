@@ -12,11 +12,17 @@ const output = ref('')
 const error = ref('')
 
 const base64Encode = (text) => {
-  return btoa(unescape(encodeURIComponent(text)))
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
 }
 
 const base64Decode = (text) => {
-  return decodeURIComponent(escape(atob(text)))
+  const binary = atob(text)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new TextDecoder().decode(bytes)
 }
 
 const urlEncode = (text) => {

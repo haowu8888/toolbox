@@ -1,11 +1,65 @@
+import { CLEARABLE_STORAGE_KEYS, defaultAppState, safeParseJson, STORAGE_KEYS } from '../utils/storageKeys'
+
+const readRawValue = (key, fallback = null) => {
+  try {
+    const value = localStorage.getItem(key)
+    return value ?? fallback
+  } catch (err) {
+    console.error(`Error reading localStorage key "${key}":`, err)
+    return fallback
+  }
+}
+
+const readJsonValue = (key, fallback) => safeParseJson(readRawValue(key), fallback)
+
+const writeJsonValue = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value))
+}
+
+const normalizeTheme = (theme) => (theme === 'dark' ? 'dark' : 'light')
+
+const normalizeAppState = (appState = {}) => ({
+  favoriteTools: Array.isArray(appState.favoriteTools) ? appState.favoriteTools : [],
+  recentTools: Array.isArray(appState.recentTools) ? appState.recentTools : [],
+  lastTool: typeof appState.lastTool === 'string' && appState.lastTool ? appState.lastTool : null,
+  notes: Array.isArray(appState.notes) ? appState.notes : [],
+  lotteryTemplates: Array.isArray(appState.lotteryTemplates) ? appState.lotteryTemplates : [],
+  lotteryRecords: Array.isArray(appState.lotteryRecords) ? appState.lotteryRecords : [],
+})
+
+const readThemeValue = () => normalizeTheme(readRawValue(STORAGE_KEYS.theme, 'light'))
+
+const readAppState = () => ({
+  favoriteTools: readJsonValue(STORAGE_KEYS.favoriteTools, defaultAppState().favoriteTools),
+  recentTools: readJsonValue(STORAGE_KEYS.recentTools, defaultAppState().recentTools),
+  lastTool: readRawValue(STORAGE_KEYS.lastTool),
+  notes: readJsonValue(STORAGE_KEYS.notes, defaultAppState().notes),
+  lotteryTemplates: readJsonValue(STORAGE_KEYS.lotteryTemplates, defaultAppState().lotteryTemplates),
+  lotteryRecords: readJsonValue(STORAGE_KEYS.lotteryRecords, defaultAppState().lotteryRecords),
+})
+
+const writeAppState = (appState) => {
+  writeJsonValue(STORAGE_KEYS.favoriteTools, appState.favoriteTools)
+  writeJsonValue(STORAGE_KEYS.recentTools, appState.recentTools)
+  writeJsonValue(STORAGE_KEYS.notes, appState.notes)
+  writeJsonValue(STORAGE_KEYS.lotteryTemplates, appState.lotteryTemplates)
+  writeJsonValue(STORAGE_KEYS.lotteryRecords, appState.lotteryRecords)
+
+  if (appState.lastTool) {
+    localStorage.setItem(STORAGE_KEYS.lastTool, appState.lastTool)
+    return
+  }
+
+  localStorage.removeItem(STORAGE_KEYS.lastTool)
+}
+
 /**
  * 配置管理工具
  */
-export const useConfig = (key = 'toolbox_config') => {
+export const useConfig = (key = STORAGE_KEYS.config) => {
   const getConfig = () => {
     try {
-      const item = localStorage.getItem(key)
-      return item ? JSON.parse(item) : {}
+      return readJsonValue(key, {})
     } catch (err) {
       console.error(`Error reading config:`, err)
       return {}
@@ -14,7 +68,7 @@ export const useConfig = (key = 'toolbox_config') => {
 
   const saveConfig = (config) => {
     try {
-      localStorage.setItem(key, JSON.stringify(config))
+      writeJsonValue(key, config)
     } catch (err) {
       console.error(`Error saving config:`, err)
     }
@@ -22,15 +76,15 @@ export const useConfig = (key = 'toolbox_config') => {
 
   const exportConfig = () => {
     const config = getConfig()
-    const allData = {
+    return {
       config,
-      history: JSON.parse(localStorage.getItem('toolbox_history') || '[]'),
-      favorites: JSON.parse(localStorage.getItem('toolbox_favorites') || '[]'),
-      theme: localStorage.getItem('toolbox_theme') || 'light',
+      history: readJsonValue(STORAGE_KEYS.history, []),
+      favorites: readJsonValue(STORAGE_KEYS.favorites, []),
+      theme: readThemeValue(),
+      appState: readAppState(),
       exportDate: new Date().toISOString(),
       version: '1.0',
     }
-    return allData
   }
 
   const downloadConfig = (filename = 'toolbox-config.json') => {
@@ -44,9 +98,8 @@ export const useConfig = (key = 'toolbox_config') => {
     URL.revokeObjectURL(url)
   }
 
-  const importConfig = (file) => {
-    return new Promise((resolve, reject) => {
-      // 限制文件大小（最大 5MB）
+  const importConfig = (file) =>
+    new Promise((resolve, reject) => {
       if (file.size > 5 * 1024 * 1024) {
         reject(new Error('配置文件过大，最大支持 5MB'))
         return
@@ -61,27 +114,30 @@ export const useConfig = (key = 'toolbox_config') => {
             return
           }
 
-          // 校验数据类型
           if (data.history && !Array.isArray(data.history)) {
             reject(new Error('配置文件格式错误：history 应为数组'))
             return
           }
+
           if (data.favorites && !Array.isArray(data.favorites)) {
             reject(new Error('配置文件格式错误：favorites 应为数组'))
             return
           }
-          if (data.history && data.history.length > 500) {
-            data.history = data.history.slice(0, 500)
-          }
-          if (data.favorites && data.favorites.length > 500) {
-            data.favorites = data.favorites.slice(0, 500)
+
+          if (data.appState && typeof data.appState !== 'object') {
+            reject(new Error('配置文件格式错误：appState 应为对象'))
+            return
           }
 
-          // 导入所有数据
-          localStorage.setItem('toolbox_config', JSON.stringify(data.config || {}))
-          localStorage.setItem('toolbox_history', JSON.stringify(data.history || []))
-          localStorage.setItem('toolbox_favorites', JSON.stringify(data.favorites || []))
-          localStorage.setItem('toolbox_theme', data.theme === 'dark' ? 'dark' : 'light')
+          const history = Array.isArray(data.history) ? data.history.slice(0, 500) : []
+          const favorites = Array.isArray(data.favorites) ? data.favorites.slice(0, 500) : []
+          const appState = normalizeAppState(data.appState)
+
+          writeJsonValue(STORAGE_KEYS.config, data.config || {})
+          writeJsonValue(STORAGE_KEYS.history, history)
+          writeJsonValue(STORAGE_KEYS.favorites, favorites)
+          localStorage.setItem(STORAGE_KEYS.theme, normalizeTheme(data.theme))
+          writeAppState(appState)
 
           resolve(data)
         } catch (err) {
@@ -91,29 +147,31 @@ export const useConfig = (key = 'toolbox_config') => {
       reader.onerror = () => reject(new Error('读取文件失败'))
       reader.readAsText(file)
     })
-  }
 
   const clearAllData = () => {
-    localStorage.removeItem(key)
-    localStorage.removeItem('toolbox_history')
-    localStorage.removeItem('toolbox_favorites')
-    localStorage.removeItem('toolbox_theme')
+    for (const storageKey of CLEARABLE_STORAGE_KEYS) {
+      localStorage.removeItem(storageKey)
+    }
   }
 
-  const getDataStats = () => {
+const getDataStats = () => {
     const config = getConfig()
-    const history = JSON.parse(localStorage.getItem('toolbox_history') || '[]')
-    const favorites = JSON.parse(localStorage.getItem('toolbox_favorites') || '[]')
+    const history = readJsonValue(STORAGE_KEYS.history, [])
+    const favorites = readJsonValue(STORAGE_KEYS.favorites, [])
+    const notes = readJsonValue(STORAGE_KEYS.notes, [])
+    const lotteryRecords = readJsonValue(STORAGE_KEYS.lotteryRecords, [])
+    const totalSize = CLEARABLE_STORAGE_KEYS.reduce((size, storageKey) => {
+      const raw = readRawValue(storageKey, '')
+      return size + raw.length
+    }, 0)
 
     return {
       configSize: JSON.stringify(config).length,
       historyCount: history.length,
       favoritesCount: favorites.length,
-      totalSize: JSON.stringify({
-        config,
-        history,
-        favorites,
-      }).length,
+      notesCount: notes.length,
+      lotteryRecordCount: lotteryRecords.length,
+      totalSize,
     }
   }
 

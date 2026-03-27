@@ -19,15 +19,6 @@ const basicEntityMap = {
   "'": '&#39;',
 }
 
-const basicDecodeMap = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&apos;': "'",
-}
-
 const encodeBasic = (text) => {
   return text.replace(/[&<>"']/g, (char) => basicEntityMap[char])
 }

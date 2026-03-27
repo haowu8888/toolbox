@@ -1,8 +1,14 @@
 <script setup>
 import { ref, watch, onUnmounted } from 'vue'
+import jsQR from 'jsqr'
 import QRCode from 'qrcode'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+
+const QR_DEBOUNCE_MS = 300
+const QR_IMAGE_WIDTH = 300
+const CANVAS_CONTEXT_OPTIONS = { willReadFrequently: true }
+const nativeScanSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
@@ -11,9 +17,12 @@ const activeMode = ref('generate')
 const inputValue = ref('')
 const qrCodeUrl = ref('')
 const error = ref('')
+const scanResult = ref('')
+const scanPreview = ref('')
+const scanSupported = ref(true)
 
-// 生成二维码（防抖 300ms）
 let qrDebounceTimer = null
+
 watch(inputValue, (newValue) => {
   if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
   if (!newValue.trim()) {
@@ -21,6 +30,7 @@ watch(inputValue, (newValue) => {
     error.value = ''
     return
   }
+
   qrDebounceTimer = setTimeout(async () => {
     try {
       error.value = ''
@@ -29,14 +39,65 @@ watch(inputValue, (newValue) => {
         type: 'image/png',
         quality: 0.95,
         margin: 1,
-        width: 300,
+        width: QR_IMAGE_WIDTH,
       })
     } catch (err) {
       error.value = '生成二维码失败：' + err.message
       qrCodeUrl.value = ''
     }
-  }, 300)
+  }, QR_DEBOUNCE_MS)
 })
+
+const revokePreviewUrl = () => {
+  if (!scanPreview.value) return
+  URL.revokeObjectURL(scanPreview.value)
+  scanPreview.value = ''
+}
+
+const loadImage = (url) =>
+  new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('无法读取上传的图片'))
+    img.src = url
+  })
+
+const detectWithBarcodeDetector = async (img) => {
+  const detector = new BarcodeDetector({ formats: ['qr_code'] })
+  const results = await detector.detect(img)
+  return results[0]?.rawValue ?? ''
+}
+
+const detectWithJsQr = (img) => {
+  const canvas = document.createElement('canvas')
+  const width = img.naturalWidth || img.width
+  const height = img.naturalHeight || img.height
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext('2d', CANVAS_CONTEXT_OPTIONS)
+  if (!context) {
+    throw new Error('无法初始化二维码识别画布')
+  }
+
+  context.drawImage(img, 0, 0, width, height)
+  const imageData = context.getImageData(0, 0, width, height)
+  const result = jsQR(imageData.data, width, height)
+  return result?.data ?? ''
+}
+
+const detectScanResult = async (img) => {
+  if (nativeScanSupported) {
+    try {
+      const nativeResult = await detectWithBarcodeDetector(img)
+      if (nativeResult) return nativeResult
+    } catch (err) {
+      console.warn('BarcodeDetector failed, fallback to jsQR', err)
+    }
+  }
+
+  return detectWithJsQr(img)
+}
 
 const downloadQRCode = () => {
   if (!qrCodeUrl.value) return
@@ -51,11 +112,6 @@ const clearInput = () => {
   inputValue.value = ''
 }
 
-// 识别二维码
-const scanResult = ref('')
-const scanPreview = ref('')
-const scanSupported = ref(typeof window !== 'undefined' && 'BarcodeDetector' in window)
-
 const handleScanFile = async (event) => {
   const file = event.target.files?.[0]
   if (!file) return
@@ -65,9 +121,8 @@ const handleScanFile = async (event) => {
 const handleDrop = async (event) => {
   event.preventDefault()
   const file = event.dataTransfer?.files?.[0]
-  if (file && file.type.startsWith('image/')) {
-    await scanImage(file)
-  }
+  if (!file || !file.type.startsWith('image/')) return
+  await scanImage(file)
 }
 
 const handleDragOver = (event) => {
@@ -76,36 +131,23 @@ const handleDragOver = (event) => {
 
 const scanImage = async (file) => {
   scanResult.value = ''
-  // 释放旧的 Object URL
-  if (scanPreview.value) {
-    URL.revokeObjectURL(scanPreview.value)
-  }
+  revokePreviewUrl()
+
   const url = URL.createObjectURL(file)
   scanPreview.value = url
 
-  if (!scanSupported.value) {
-    showToast('当前浏览器不支持二维码识别', 'error')
-    return
-  }
-
   try {
-    const img = new Image()
-    img.src = url
-    await new Promise((resolve, reject) => {
-      img.onload = resolve
-      img.onerror = reject
-    })
+    const image = await loadImage(url)
+    const decodedValue = await detectScanResult(image)
 
-    const detector = new BarcodeDetector({ formats: ['qr_code'] })
-    const results = await detector.detect(img)
-
-    if (results.length > 0) {
-      scanResult.value = results[0].rawValue
-      addHistory('二维码识别', scanResult.value)
-      showToast('识别成功')
-    } else {
+    if (!decodedValue) {
       showToast('未检测到二维码', 'info')
+      return
     }
+
+    scanResult.value = decodedValue
+    addHistory('二维码识别', decodedValue)
+    showToast('识别成功')
   } catch (err) {
     showToast('识别失败：' + err.message, 'error')
   }
@@ -122,16 +164,11 @@ const copyScanResult = async () => {
 
 const clearScan = () => {
   scanResult.value = ''
-  if (scanPreview.value) {
-    URL.revokeObjectURL(scanPreview.value)
-  }
-  scanPreview.value = ''
+  revokePreviewUrl()
 }
 
 onUnmounted(() => {
-  if (scanPreview.value) {
-    URL.revokeObjectURL(scanPreview.value)
-  }
+  revokePreviewUrl()
   if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
 })
 </script>
@@ -145,7 +182,6 @@ onUnmounted(() => {
       <button :class="['mode-btn', { active: activeMode === 'scan' }]" @click="activeMode = 'scan'">📷 识别二维码</button>
     </div>
 
-    <!-- 生成模式 -->
     <div v-show="activeMode === 'generate'">
       <div class="input-section">
         <textarea
@@ -167,22 +203,15 @@ onUnmounted(() => {
         <button @click="downloadQRCode" class="btn btn-primary">下载二维码</button>
       </div>
 
-      <div v-else-if="!error && inputValue" class="generating">
-        生成中...
-      </div>
+      <div v-else-if="!error && inputValue" class="generating">生成中...</div>
     </div>
 
-    <!-- 识别模式 -->
     <div v-show="activeMode === 'scan'">
       <div v-if="!scanSupported" class="warning-message">
-        当前浏览器不支持 BarcodeDetector API，请使用最新版 Chrome 或 Edge 浏览器
+        当前浏览器不支持二维码识别，请更换浏览器后重试
       </div>
 
-      <div
-        class="drop-zone"
-        @drop="handleDrop"
-        @dragover="handleDragOver"
-      >
+      <div class="drop-zone" @drop="handleDrop" @dragover="handleDragOver">
         <div class="drop-content">
           <span class="drop-icon">📷</span>
           <p>拖拽图片到这里，或点击上传</p>
@@ -205,7 +234,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="scanPreview" class="button-group" style="margin-top: 1rem;">
+      <div v-if="scanPreview" class="button-group" style="margin-top: 1rem">
         <button @click="clearScan" class="btn btn-secondary">清空</button>
       </div>
     </div>
@@ -547,3 +576,5 @@ h2 {
   color: #e0e0e0;
 }
 </style>
+
+

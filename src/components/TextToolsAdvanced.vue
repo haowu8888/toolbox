@@ -25,7 +25,8 @@ const uuidList = ref([generateUUID()])
 
 const refreshUuids = () => {
   const list = []
-  for (let i = 0; i < parseInt(uuidCount.value) || 1; i++) {
+  const count = parseInt(uuidCount.value, 10) || 1
+  for (let i = 0; i < count; i++) {
     list.push(generateUUID())
   }
   uuidList.value = list

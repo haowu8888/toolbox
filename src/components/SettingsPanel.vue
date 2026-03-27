@@ -1,25 +1,47 @@
 <script setup>
-import { ref, onMounted, defineProps } from 'vue'
-import { useTheme } from '../composables/useTheme'
+import { defineProps, onMounted, ref } from 'vue'
 import { useConfig } from '../composables/useConfig'
+import { useTheme } from '../composables/useTheme'
 
 const props = defineProps({
-  toolCount: { type: Number, default: 0 }
+  toolCount: { type: Number, default: 0 },
 })
 
-const { theme, toggleTheme, isDark } = useTheme()
-const { downloadConfig, importConfig, clearAllData, getDataStats } = useConfig()
+const { toggleTheme, isDark } = useTheme()
+const { clearAllData, downloadConfig, getDataStats, importConfig } = useConfig()
 
-const stats = ref({ configSize: 0, historyCount: 0, favoritesCount: 0, totalSize: 0 })
+const stats = ref({
+  configSize: 0,
+  historyCount: 0,
+  favoritesCount: 0,
+  notesCount: 0,
+  lotteryRecordCount: 0,
+  totalSize: 0,
+})
 const importStatus = ref('')
-const showClearConfirm = ref(false)
 
-onMounted(() => {
-  updateStats()
-})
+const statCards = [
+  { key: 'history', icon: '📎', label: '历史记录', valueKey: 'historyCount', suffix: '条' },
+  { key: 'favorites', icon: '⭐', label: '收藏夹', valueKey: 'favoritesCount', suffix: '项' },
+  { key: 'notes', icon: '📝', label: '笔记与待办', valueKey: 'notesCount', suffix: '条' },
+  { key: 'lotteryRecords', icon: '🎯', label: '抽奖记录', valueKey: 'lotteryRecordCount', suffix: '条' },
+]
 
-const updateStats = () => {
+const refreshStats = () => {
   stats.value = getDataStats()
+}
+
+const formatSize = (bytes) => {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB']
+  const base = 1024
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(base)))
+  return `${Math.round((bytes / base ** index) * 100) / 100} ${units[index]}`
+}
+
+const getStoragePercent = () => {
+  const maxStorageSize = 5 * 1024 * 1024
+  return Math.min(100, (stats.value.totalSize / maxStorageSize) * 100)
 }
 
 const handleImport = async (event) => {
@@ -29,83 +51,68 @@ const handleImport = async (event) => {
   try {
     importStatus.value = '导入中...'
     await importConfig(file)
-    importStatus.value = '✅ 导入成功！页面将刷新...'
-    setTimeout(() => {
-      window.location.reload()
-    }, 1500)
-  } catch (err) {
-    importStatus.value = '❌ ' + err.message
+    importStatus.value = '✅ 导入成功，页面将刷新...'
+    setTimeout(() => window.location.reload(), 1500)
+  } catch (error) {
+    importStatus.value = `❌ ${error.message}`
     setTimeout(() => {
       importStatus.value = ''
     }, 3000)
   }
 
-  // 重置文件输入
   event.target.value = ''
 }
 
 const handleClearAllData = () => {
-  if (confirm('确定要清空所有数据吗？此操作无法撤销！\n\n将清空：\n- 历史记录\n- 收藏夹\n- 主题设置\n- 其他配置')) {
-    clearAllData()
-    importStatus.value = '✅ 已清空所有数据'
-    setTimeout(() => {
-      window.location.reload()
-    }, 1000)
-  }
+  const confirmed = confirm(
+    '确定要清空所有数据吗？此操作无法撤销！\n\n将清空：\n- 历史记录与收藏\n- 工具最近使用与工具收藏\n- 笔记与抽奖记录\n- 主题与其他本地配置',
+  )
+  if (!confirmed) return
+
+  clearAllData()
+  importStatus.value = '✅ 已清空所有浏览器本地数据'
+  setTimeout(() => window.location.reload(), 1000)
 }
 
-const formatSize = (bytes) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
-}
-
-const getStoragePercent = () => {
-  const maxSize = 5 * 1024 * 1024 // 5MB 作为参考
-  return Math.min(100, (stats.value.totalSize / maxSize) * 100)
-}
+onMounted(() => {
+  refreshStats()
+})
 </script>
 
 <template>
   <div class="settings-panel">
     <h2>⚙️ 设置与管理</h2>
-    <p class="description">自定义应用设置、管理数据和主题</p>
+    <p class="description">管理主题、本地数据、导入导出与存储占用。</p>
 
-    <!-- 主题设置 -->
-    <div class="setting-section">
+    <section class="setting-section">
       <div class="section-title">主题设置</div>
       <div class="theme-setting">
         <div class="theme-info">
           <div class="theme-label">当前主题</div>
-          <div class="theme-value">{{ isDark ? '🌙 深色模式' : '☀️ 亮色模式' }}</div>
+          <div class="theme-value">{{ isDark ? '深色模式' : '浅色模式' }}</div>
         </div>
-        <button @click="toggleTheme" class="btn btn-theme">
-          {{ isDark ? '切换为亮色' : '切换为深色' }}
+        <button class="btn btn-theme" @click="toggleTheme">
+          {{ isDark ? '切换为浅色' : '切换为深色' }}
         </button>
       </div>
-    </div>
+    </section>
 
-    <!-- 数据统计 -->
-    <div class="setting-section">
+    <section class="setting-section">
       <div class="section-title">数据统计</div>
       <div class="stats-grid">
-        <div class="stat-item">
-          <div class="stat-icon">📚</div>
+        <div
+          v-for="card in statCards"
+          :key="card.key"
+          class="stat-item"
+          :data-stat-key="card.key"
+        >
+          <div class="stat-icon">{{ card.icon }}</div>
           <div class="stat-content">
-            <div class="stat-label">历史记录</div>
-            <div class="stat-value">{{ stats.historyCount }} 条</div>
+            <div class="stat-label">{{ card.label }}</div>
+            <div class="stat-value">{{ stats[card.valueKey] }} {{ card.suffix }}</div>
           </div>
         </div>
-        <div class="stat-item">
-          <div class="stat-icon">⭐</div>
-          <div class="stat-content">
-            <div class="stat-label">收藏夹</div>
-            <div class="stat-value">{{ stats.favoritesCount }} 项</div>
-          </div>
-        </div>
-        <div class="stat-item">
+        <div class="stat-item" data-stat-key="totalSize">
           <div class="stat-icon">💾</div>
           <div class="stat-content">
             <div class="stat-label">总大小</div>
@@ -113,76 +120,63 @@ const getStoragePercent = () => {
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- 数据备份 -->
-    <div class="setting-section">
+    <section class="setting-section">
       <div class="section-title">数据备份与恢复</div>
       <div class="backup-actions">
-        <button @click="downloadConfig" class="btn btn-primary">
-          ⬇️ 导出配置
-        </button>
+        <button class="btn btn-primary" @click="downloadConfig">⬇️ 导出配置</button>
         <label class="btn btn-primary">
-          <input
-            type="file"
-            accept=".json"
-            @change="handleImport"
-            style="display: none"
-          />
+          <input type="file" accept=".json" style="display: none" @change="handleImport" />
           ⬆️ 导入配置
         </label>
       </div>
 
-      <div v-if="importStatus" :class="['import-status', { error: importStatus.includes('❌') }]">
+      <div v-if="importStatus" :class="['import-status', { error: importStatus.startsWith('❌') }]">
         {{ importStatus }}
       </div>
 
       <div class="backup-info">
         <div class="info-icon">ℹ️</div>
         <div class="info-text">
-          <p>导出配置将保存所有数据，包括：</p>
+          <p>导出配置会保存所有浏览器本地数据，包括：</p>
           <ul>
             <li>历史记录</li>
             <li>收藏夹</li>
             <li>主题设置</li>
             <li>应用配置</li>
+            <li>工具最近使用与工具收藏</li>
+            <li>笔记与抽奖记录</li>
           </ul>
           <p>导入时会覆盖现有数据，请谨慎操作。</p>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- 存储空间 -->
-    <div class="setting-section">
+    <section class="setting-section">
       <div class="section-title">存储空间</div>
       <div class="storage-info">
         <div class="storage-bar">
-          <div class="storage-used" :style="{ width: getStoragePercent() + '%' }"></div>
+          <div class="storage-used" :style="{ width: `${getStoragePercent()}%` }"></div>
         </div>
-        <div class="storage-text">
-          已使用 {{ formatSize(stats.totalSize) }} （基于浏览器本地存储）
-        </div>
+        <div class="storage-text">已使用 {{ formatSize(stats.totalSize) }}（基于浏览器本地存储）</div>
       </div>
-    </div>
+    </section>
 
-    <!-- 数据清理 -->
-    <div class="setting-section danger-zone">
+    <section class="setting-section danger-zone">
       <div class="section-title">危险操作区</div>
       <div class="danger-actions">
-        <button @click="handleClearAllData" class="btn btn-danger">
-          🗑️ 清空所有数据
-        </button>
+        <button class="btn btn-danger" @click="handleClearAllData">🗑️ 清空所有数据</button>
       </div>
       <div class="danger-warning">
         <div class="warning-icon">⚠️</div>
         <div class="warning-text">
-          此操作将删除所有历史记录、收藏和设置，且无法恢复。请先导出配置作为备份。
+          此操作将删除历史记录、收藏、工具状态、笔记、抽奖记录和主题设置，且无法恢复。请先导出配置作为备份。
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- 关于应用 -->
-    <div class="setting-section about">
+    <section class="setting-section about">
       <div class="section-title">关于</div>
       <div class="about-info">
         <div class="about-item">
@@ -203,12 +197,13 @@ const getStoragePercent = () => {
         </div>
         <div class="about-item">
           <span class="label">存储方式：</span>
-          <span class="value">本地浏览器存储（完全隐私）</span>
+          <span class="value">浏览器本地存储</span>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
+
 <style scoped>
 .settings-panel {
   display: flex;
@@ -224,413 +219,200 @@ h2 {
 
 .description {
   margin: 0;
-  color: #888;
-  font-size: 0.95rem;
+  color: #6b7280;
 }
 
 .setting-section {
-  background: #f9f9f9;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
+  border: 1px solid #d8e4ec;
+  border-radius: 12px;
   padding: 1.5rem;
-  transition: all 0.3s;
-}
-
-.setting-section:hover {
-  border-color: #4ecdc4;
-  box-shadow: 0 2px 8px rgba(78, 205, 196, 0.1);
+  background: #f8fbfd;
 }
 
 .section-title {
   font-weight: 700;
-  font-size: 1.1rem;
-  color: #333;
-  margin-bottom: 1.2rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-.theme-setting {
-  display: flex;
-  align-items: center;
-  gap: 2rem;
-  justify-content: space-between;
-}
-
-.theme-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.theme-label {
-  font-size: 0.9rem;
-  color: #666;
-  font-weight: 600;
-}
-
-.theme-value {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #4ecdc4;
-}
-
-.btn {
-  padding: 0.7rem 1.5rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.btn-theme {
-  background-color: #4ecdc4;
-  color: white;
-  white-space: nowrap;
-}
-
-.btn-theme:hover {
-  background-color: #3ab9b0;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
-}
-
-.btn-primary {
-  background-color: #4ecdc4;
-  color: white;
-}
-
-.btn-primary:hover {
-  background-color: #3ab9b0;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
-}
-
-.btn-danger {
-  background-color: #ff6b6b;
-  color: white;
-}
-
-.btn-danger:hover {
-  background-color: #ff5252;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-}
-
-.stat-item {
-  background: white;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 1rem;
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-  transition: all 0.3s;
-}
-
-.stat-item:hover {
-  border-color: #4ecdc4;
-  box-shadow: 0 2px 8px rgba(78, 205, 196, 0.1);
-}
-
-.stat-icon {
-  font-size: 1.8rem;
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.stat-label {
-  font-size: 0.85rem;
-  color: #666;
-}
-
-.stat-value {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: #333;
-}
-
-.backup-actions {
-  display: flex;
-  gap: 1rem;
   margin-bottom: 1rem;
+  color: #1f2937;
+}
+
+.theme-setting,
+.backup-actions,
+.danger-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
 }
 
-.import-status {
-  padding: 0.75rem;
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  font-weight: 600;
+.theme-value,
+.stat-value,
+.value {
+  font-weight: 700;
+  color: #111827;
 }
 
-.import-status.error {
-  background-color: #f8d7da;
-  color: #721c24;
-  border-color: #f5c6cb;
+.stats-grid,
+.about-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.stat-item,
+.about-item {
+  background: #fff;
+  border: 1px solid #d8e4ec;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.stat-icon {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label,
+.label,
+.storage-text,
+.info-text,
+.warning-text {
+  color: #4b5563;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary,
+.btn-theme {
+  background: #4ecdc4;
+  color: #fff;
+}
+
+.btn-danger {
+  background: #ff6b6b;
+  color: #fff;
+}
+
+.backup-info,
+.danger-warning {
+  margin-top: 1rem;
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 10px;
 }
 
 .backup-info {
-  background: #f0f9ff;
-  border: 1px solid #b3e5fc;
-  border-radius: 6px;
-  padding: 1rem;
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
+  background: #eef8ff;
+  border: 1px solid #b7ddff;
 }
 
-.info-icon {
-  font-size: 1.5rem;
-  flex-shrink: 0;
+.danger-zone {
+  border-color: #ffc7c7;
+  background: #fff6f6;
 }
 
-.info-text {
-  font-size: 0.9rem;
-  color: #555;
-  line-height: 1.6;
-}
-
-.info-text p {
-  margin: 0.5rem 0;
-}
-
-.info-text ul {
-  margin: 0.5rem 0;
-  padding-left: 1.5rem;
-}
-
-.info-text li {
-  margin: 0.3rem 0;
-}
-
-.storage-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+.danger-warning {
+  background: #ffe8e8;
+  border: 1px solid #ffc7c7;
 }
 
 .storage-bar {
-  width: 100%;
-  height: 20px;
-  background-color: #e0e0e0;
-  border-radius: 10px;
+  height: 16px;
+  background: #d8e4ec;
+  border-radius: 999px;
   overflow: hidden;
+  margin-bottom: 0.75rem;
 }
 
 .storage-used {
   height: 100%;
-  background: linear-gradient(90deg, #4ecdc4, #45b9b0);
-  transition: width 0.3s;
+  background: linear-gradient(90deg, #4ecdc4, #5b8def);
 }
 
-.storage-text {
-  font-size: 0.9rem;
-  color: #666;
+.import-status {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #e8f7ec;
+  color: #166534;
 }
 
-.danger-zone {
-  border-color: #ff6b6b;
-  background: #fff5f5;
+.import-status.error {
+  background: #ffe8e8;
+  color: #b91c1c;
 }
 
-.danger-zone .section-title {
-  color: #ff6b6b;
-  border-bottom-color: #ffe5e5;
-}
-
-.danger-actions {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.danger-warning {
-  background: #ffe5e5;
-  border: 1px solid #ffcccc;
-  border-radius: 6px;
-  padding: 1rem;
-  display: flex;
-  gap: 1rem;
-}
-
-.warning-icon {
-  font-size: 1.5rem;
-  flex-shrink: 0;
-}
-
-.warning-text {
-  font-size: 0.9rem;
-  color: #c33;
-  line-height: 1.6;
-}
-
-.about {
-  background: linear-gradient(135deg, #f0f9ff, #f5f5f5);
-  border-color: #b3e5fc;
-}
-
-.about-info {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 1rem;
-}
-
-.about-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.75rem;
-  background: white;
-  border-radius: 6px;
-  font-size: 0.95rem;
-}
-
-.about-item .label {
-  font-weight: 600;
-  color: #333;
-}
-
-.about-item .value {
-  color: #4ecdc4;
-  font-weight: 500;
+ul {
+  margin: 0.75rem 0;
+  padding-left: 1.25rem;
 }
 
 @media (max-width: 768px) {
-  .theme-setting {
+  .theme-setting,
+  .backup-actions,
+  .danger-actions {
     flex-direction: column;
     align-items: stretch;
-    gap: 1rem;
-  }
-
-  .theme-info {
-    order: 2;
   }
 
   .btn {
     width: 100%;
   }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .backup-actions {
-    flex-direction: column;
-  }
-
-  .about-info {
-    grid-template-columns: 1fr;
-  }
 }
 
-/* 深色模式样式 */
-:global([data-theme='dark'] h2) {
-  color: #6edddd;
+:global([data-theme='dark']) .setting-section {
+  background: #243240;
+  border-color: #41576b;
 }
 
-:global([data-theme='dark'] .description) {
-  color: #a0c0e0;
+:global([data-theme='dark']) .stat-item,
+:global([data-theme='dark']) .about-item {
+  background: #1b2733;
+  border-color: #41576b;
 }
 
-:global([data-theme='dark'] .setting-section) {
-  background: #2a3a4a;
-  border-color: #445566;
+:global([data-theme='dark']) .description,
+:global([data-theme='dark']) .stat-label,
+:global([data-theme='dark']) .label,
+:global([data-theme='dark']) .storage-text,
+:global([data-theme='dark']) .info-text,
+:global([data-theme='dark']) .warning-text {
+  color: #b7c7d6;
 }
 
-:global([data-theme='dark'] .section-title) {
-  color: #e0e0e0;
-  border-bottom-color: #445566;
+:global([data-theme='dark']) .theme-value,
+:global([data-theme='dark']) .stat-value,
+:global([data-theme='dark']) .value,
+:global([data-theme='dark']) .section-title,
+:global([data-theme='dark']) h2 {
+  color: #f3f7fb;
 }
 
-:global([data-theme='dark'] .theme-label),
-:global([data-theme='dark'] .stat-label) {
-  color: #a0c0e0;
+:global([data-theme='dark']) .backup-info {
+  background: #193041;
+  border-color: #2f526d;
 }
 
-:global([data-theme='dark'] .theme-value),
-:global([data-theme='dark'] .stat-value) {
-  color: #4ecdc4;
+:global([data-theme='dark']) .danger-zone,
+:global([data-theme='dark']) .danger-warning,
+:global([data-theme='dark']) .import-status.error {
+  background: #3a2020;
+  border-color: #7f3b3b;
 }
 
-:global([data-theme='dark'] .stat-item),
-:global([data-theme='dark'] .about-item) {
-  background: #1a2a3a;
-  border-color: #445566;
+:global([data-theme='dark']) .import-status {
+  background: #163524;
+  color: #a7f3d0;
 }
 
-:global([data-theme='dark'] .about-item) .label {
-  color: #a0c0e0;
-}
-
-:global([data-theme='dark'] .about-item) .value {
-  color: #4ecdc4;
-}
-
-:global([data-theme='dark'] .storage-bar) {
-  background-color: #445566;
-}
-
-:global([data-theme='dark'] .storage-text) {
-  color: #a0c0e0;
-}
-
-:global([data-theme='dark'] .backup-info) {
-  background: #1a2a3a;
-  border-color: #3a5a7a;
-}
-
-:global([data-theme='dark'] .info-text) {
-  color: #a0c0e0;
-}
-
-:global([data-theme='dark'] .import-status) {
-  background-color: #1a3a2a;
-  color: #5ec89f;
-  border-color: #2a5a3a;
-}
-
-:global([data-theme='dark'] .import-status.error) {
-  background-color: #3a1a1a;
-  color: #ff8fa3;
-  border-color: #5a2a2a;
-}
-
-:global([data-theme='dark'] .danger-zone) {
-  border-color: #ff6b6b;
-  background: #2a1a1a;
-}
-
-:global([data-theme='dark'] .danger-zone) .section-title {
-  color: #ff8fa3;
-  border-bottom-color: #4a2a2a;
-}
-
-:global([data-theme='dark'] .danger-warning) {
-  background: #4a2a2a;
-  border-color: #8a4a4a;
-}
-
-:global([data-theme='dark'] .warning-text) {
-  color: #ff8fa3;
-}
-
-:global([data-theme='dark'] .about) {
-  background: linear-gradient(135deg, #1a2a3a, #2a3a4a);
-  border-color: #3a5a7a;
+:global([data-theme='dark']) .storage-bar {
+  background: #41576b;
 }
 </style>

@@ -1,43 +1,26 @@
 <script setup>
-import { ref, watch, computed, onMounted, onUnmounted, defineAsyncComponent, onErrorCaptured } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, onErrorCaptured } from 'vue'
 import { useTheme } from './composables/useTheme'
+import { useToast } from './composables/useToast'
+import { categoryGroups, toolComponentMap, toolMap, tools } from './tools/registry'
 // 常驻UI组件保持静态导入
 import CommandPalette from './components/CommandPalette.vue'
 import ToastNotification from './components/ToastNotification.vue'
+import ToolLoading from './components/ToolLoading.vue'
 
-// 工具组件全部懒加载，按需加载减少首屏体积
-const QRCodeGenerator = defineAsyncComponent(() => import('./components/QRCodeGenerator.vue'))
-const JsonFormatter = defineAsyncComponent(() => import('./components/JsonFormatter.vue'))
-const TextEncryption = defineAsyncComponent(() => import('./components/TextEncryption.vue'))
-const EncodingTools = defineAsyncComponent(() => import('./components/EncodingTools.vue'))
-const RegexTools = defineAsyncComponent(() => import('./components/RegexTools.vue'))
-const MarkdownTools = defineAsyncComponent(() => import('./components/MarkdownTools.vue'))
-const TimeTools = defineAsyncComponent(() => import('./components/TimeTools.vue'))
-const ConversionTools = defineAsyncComponent(() => import('./components/ConversionTools.vue'))
-const ColorTools = defineAsyncComponent(() => import('./components/ColorTools.vue'))
-const ValidatorTools = defineAsyncComponent(() => import('./components/ValidatorTools.vue'))
-const NetworkTools = defineAsyncComponent(() => import('./components/NetworkTools.vue'))
-const NotesTools = defineAsyncComponent(() => import('./components/NotesTools.vue'))
-const StoragePanel = defineAsyncComponent(() => import('./components/StoragePanel.vue'))
-const SettingsPanel = defineAsyncComponent(() => import('./components/SettingsPanel.vue'))
-const TextToolsAdvanced = defineAsyncComponent(() => import('./components/TextToolsAdvanced.vue'))
-const CalculatorTool = defineAsyncComponent(() => import('./components/CalculatorTool.vue'))
-const CodeFormatterTools = defineAsyncComponent(() => import('./components/CodeFormatterTools.vue'))
-const FileConverterTools = defineAsyncComponent(() => import('./components/FileConverterTools.vue'))
-const JwtDecoder = defineAsyncComponent(() => import('./components/JwtDecoder.vue'))
-const CronParser = defineAsyncComponent(() => import('./components/CronParser.vue'))
-const DiffTool = defineAsyncComponent(() => import('./components/DiffTool.vue'))
-const DataGenerator = defineAsyncComponent(() => import('./components/DataGenerator.vue'))
-const CssUnitConverter = defineAsyncComponent(() => import('./components/CssUnitConverter.vue'))
-const ImageCompressor = defineAsyncComponent(() => import('./components/ImageCompressor.vue'))
-const HtmlEntityConverter = defineAsyncComponent(() => import('./components/HtmlEntityConverter.vue'))
-const LotteryTool = defineAsyncComponent(() => import('./components/LotteryTool.vue'))
-const ConfigConverter = defineAsyncComponent(() => import('./components/ConfigConverter.vue'))
+const { initTheme, isDark, toggleTheme, disposeThemeListener } = useTheme()
+const { showToast } = useToast()
 
-const { initTheme, isDark, toggleTheme } = useTheme()
-
-const activeTab = ref('qrcode')
+const activeTab = ref(tools[0]?.id || 'qrcode')
+const toolReady = ref(false)
 const componentError = ref(null)
+const navRef = ref(null)
+const lastToolKey = 'toolbox_last_tool'
+const favoriteToolsKey = 'toolbox_favorite_tools'
+const recentToolsKey = 'toolbox_recent_tools'
+
+const favoriteToolIds = ref([])
+const recentToolIds = ref([])
 
 // 错误边界：捕获子组件渲染错误，避免整个应用崩溃
 onErrorCaptured((err) => {
@@ -47,122 +30,157 @@ onErrorCaptured((err) => {
 })
 
 // Hash routing
-const toolIds = new Set()
+const toolIds = new Set(tools.map((t) => t.id))
 
 const syncHashToTab = () => {
   const hash = window.location.hash.replace('#tool-', '')
   if (hash && toolIds.has(hash)) {
     activeTab.value = hash
+    return true
   }
+  return false
 }
 
 const onHashChange = () => {
   syncHashToTab()
 }
 
+const safeLoadArray = (key, fallback = []) => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    const value = JSON.parse(raw)
+    return Array.isArray(value) ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const safeSaveArray = (key, arr) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(arr))
+  } catch {
+    // ignore
+  }
+}
+
+const loadToolPrefs = () => {
+  favoriteToolIds.value = safeLoadArray(favoriteToolsKey, []).filter((id) => toolIds.has(id))
+  recentToolIds.value = safeLoadArray(recentToolsKey, []).filter((id) => toolIds.has(id))
+}
+
+const closeAllCategories = () => {
+  Object.keys(expandedCategories.value).forEach((key) => {
+    expandedCategories.value[key] = false
+  })
+  hoveredCategory.value = null
+}
+
+const onDocumentClick = (e) => {
+  const navEl = navRef.value
+  if (!navEl) return
+  if (navEl.contains(e.target)) return
+  closeAllCategories()
+}
+
+const updateRecentTools = (toolId) => {
+  const max = 8
+  const next = [toolId, ...recentToolIds.value.filter((id) => id !== toolId)].slice(0, max)
+  recentToolIds.value = next
+  safeSaveArray(recentToolsKey, next)
+}
+
+const isFavoriteTool = (toolId) => favoriteToolIds.value.includes(toolId)
+
+const toggleFavoriteTool = (toolId) => {
+  const wasFavorite = isFavoriteTool(toolId)
+  const next = wasFavorite
+    ? favoriteToolIds.value.filter((id) => id !== toolId)
+    : [toolId, ...favoriteToolIds.value]
+  favoriteToolIds.value = next
+  safeSaveArray(favoriteToolsKey, next)
+  showToast(wasFavorite ? '已取消收藏' : '已收藏')
+}
+
+const copyCurrentToolLink = async () => {
+  try {
+    const url = `${window.location.origin}${window.location.pathname}#tool-${activeTab.value}`
+    await navigator.clipboard.writeText(url)
+    showToast('链接已复制')
+  } catch {
+    showToast('复制失败', 'error')
+  }
+}
+
 onMounted(() => {
   initTheme()
-  // Populate toolIds after tools array is ready
-  tools.forEach(t => toolIds.add(t.id))
-  syncHashToTab()
+  loadToolPrefs()
+  const hasHash = syncHashToTab()
+  if (!hasHash) {
+    try {
+      const saved = localStorage.getItem(lastToolKey)
+      if (saved && toolIds.has(saved)) activeTab.value = saved
+    } catch {
+      // ignore
+    }
+  }
   window.addEventListener('hashchange', onHashChange)
+  document.addEventListener('click', onDocumentClick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('hashchange', onHashChange)
+  document.removeEventListener('click', onDocumentClick)
   if (closeTimer) {
     clearTimeout(closeTimer)
     closeTimer = null
   }
+  disposeThemeListener()
 })
 
 watch(activeTab, (newTab) => {
   componentError.value = null
+  toolReady.value = false
   window.location.hash = `#tool-${newTab}`
+  try {
+    localStorage.setItem(lastToolKey, newTab)
+  } catch {
+    // ignore
+  }
+  updateRecentTools(newTab)
 })
 const hoveredCategory = ref(null)
-const expandedCategories = ref({
-  '基础工具': false,
-  '编码转换': false,
-  '内容处理': false,
-  '数据转换': false,
-  '验证工具': false,
-  '高级工具': false,
-  '数据管理': false,
+const expandedCategories = ref(Object.fromEntries(categoryGroups.map((g) => [g.category, false])))
+
+const displayCategoryGroups = computed(() => {
+  const favorites = favoriteToolIds.value.filter((id) => toolIds.has(id))
+  const recent = recentToolIds.value.filter((id) => toolIds.has(id) && !favorites.includes(id))
+
+  const favoriteSet = new Set(favorites)
+  const groups = categoryGroups
+    .map((g) => ({
+      category: g.category,
+      ids: g.ids.filter((id) => !favoriteSet.has(id)),
+    }))
+    .filter((g) => g.ids.length > 0)
+
+  const head = []
+  if (favorites.length) head.push({ category: '⭐ 收藏', ids: favorites })
+  if (recent.length) head.push({ category: '🕘 最近', ids: recent })
+  return [...head, ...groups]
 })
 
-const tools = [
-  { id: 'qrcode', name: '二维码', icon: '📱', color: '#ff6b6b' },
-  { id: 'json', name: 'JSON', icon: '📄', color: '#4ecdc4' },
-  { id: 'encrypt', name: '文本加密', icon: '🔐', color: '#9c27b0' },
-  { id: 'encoding', name: '编码/解码', icon: '🔤', color: '#4ecdc4' },
-  { id: 'regex', name: '正则表达式', icon: '🔍', color: '#ffa502' },
-  { id: 'markdown', name: 'Markdown', icon: '📝', color: '#2196f3' },
-  { id: 'time', name: '时间工具', icon: '⏰', color: '#2196f3' },
-  { id: 'convert', name: '单位转换', icon: '🔄', color: '#ff6b6b' },
-  { id: 'color', name: '颜色工具', icon: '🎨', color: '#9c27b0' },
-  { id: 'validator', name: '数据验证', icon: '✔️', color: '#42b883' },
-  { id: 'network', name: '网络工具', icon: '🌐', color: '#2196f3' },
-  { id: 'notes', name: '笔记 & TODO', icon: '📝', color: '#9c27b0' },
-  { id: 'textadvanced', name: '文本处理', icon: '✨', color: '#ff6b6b' },
-  { id: 'calculator', name: '计算器', icon: '🧮', color: '#2196f3' },
-  { id: 'codeformatter', name: '代码工具', icon: '💻', color: '#9c27b0' },
-  { id: 'fileconverter', name: '文件转换', icon: '🔄', color: '#4ecdc4' },
-  { id: 'jwt', name: 'JWT 解码', icon: '🔑', color: '#ff6b6b' },
-  { id: 'cron', name: 'Cron解析', icon: '⏱️', color: '#e91e63' },
-  { id: 'diff', name: '文本对比', icon: '📄', color: '#00bcd4' },
-  { id: 'datagen', name: '数据生成', icon: '🎲', color: '#ff9800' },
-  { id: 'cssunit', name: 'CSS单位', icon: '📐', color: '#607d8b' },
-  { id: 'imgcompress', name: '图片压缩', icon: '🖼️', color: '#8bc34a' },
-  { id: 'htmlentity', name: 'HTML实体', icon: '🔣', color: '#795548' },
-  { id: 'configconvert', name: '配置转换', icon: '⚙️', color: '#ff9800' },
-  { id: 'lottery', name: '抽奖工具', icon: '🎰', color: '#e91e63' },
-  { id: 'storage', name: '历史/收藏', icon: '📚', color: '#4ecdc4' },
-  { id: 'settings', name: '设置', icon: '⚙️', color: '#4ecdc4' },
-]
-
-// O(1) 查找，替代模板中的 tools.find()
-const toolMap = new Map(tools.map(t => [t.id, t]))
-
-const categoryGroups = [
-  { category: '基础工具', ids: ['qrcode', 'json'] },
-  { category: '编码转换', ids: ['encrypt', 'encoding', 'regex', 'jwt', 'htmlentity', 'configconvert'] },
-  { category: '内容处理', ids: ['markdown', 'diff'] },
-  { category: '数据转换', ids: ['time', 'convert', 'color', 'cssunit'] },
-  { category: '验证工具', ids: ['validator', 'network', 'cron'] },
-  { category: '高级工具', ids: ['textadvanced', 'calculator', 'codeformatter', 'fileconverter', 'datagen', 'imgcompress', 'lottery'] },
-  { category: '数据管理', ids: ['notes', 'storage', 'settings'] },
-]
-
-const toolComponentMap = {
-  qrcode: QRCodeGenerator,
-  json: JsonFormatter,
-  encrypt: TextEncryption,
-  encoding: EncodingTools,
-  regex: RegexTools,
-  markdown: MarkdownTools,
-  time: TimeTools,
-  convert: ConversionTools,
-  color: ColorTools,
-  validator: ValidatorTools,
-  network: NetworkTools,
-  notes: NotesTools,
-  textadvanced: TextToolsAdvanced,
-  calculator: CalculatorTool,
-  codeformatter: CodeFormatterTools,
-  fileconverter: FileConverterTools,
-  jwt: JwtDecoder,
-  cron: CronParser,
-  diff: DiffTool,
-  datagen: DataGenerator,
-  cssunit: CssUnitConverter,
-  imgcompress: ImageCompressor,
-  htmlentity: HtmlEntityConverter,
-  configconvert: ConfigConverter,
-  lottery: LotteryTool,
-  storage: StoragePanel,
-  settings: SettingsPanel,
-}
+watch(
+  displayCategoryGroups,
+  (groups) => {
+    for (const g of groups) {
+      if (!(g.category in expandedCategories.value)) {
+        expandedCategories.value[g.category] = false
+      }
+    }
+  },
+  { immediate: true },
+)
 
 const currentComponent = computed(() => toolComponentMap[activeTab.value])
 const currentComponentProps = computed(() => {
@@ -233,8 +251,8 @@ const handleCommandSelect = (toolId) => {
       </div>
     </header>
 
-    <nav class="nav" role="navigation" aria-label="工具导航">
-      <div v-for="group in categoryGroups" :key="group.category" class="nav-group"
+    <nav ref="navRef" class="nav" role="navigation" aria-label="工具导航">
+      <div v-for="group in displayCategoryGroups" :key="group.category" class="nav-group"
            @mouseenter="handleMouseEnter(group.category)"
            @mouseleave="handleMouseLeave(group.category)">
         <button
@@ -268,14 +286,47 @@ const handleCommandSelect = (toolId) => {
     </nav>
 
     <main class="content" role="main">
-      <div class="tool-panel">
+      <div class="tool-panel" :data-active-tool="activeTab" :data-tool-ready="toolReady ? 'true' : 'false'">
+        <div class="tool-toolbar" role="region" aria-label="工具操作栏">
+          <div class="tool-title">
+            <span class="tool-title-icon" aria-hidden="true">{{ toolMap.get(activeTab)?.icon }}</span>
+            <span class="tool-title-text">{{ toolMap.get(activeTab)?.name }}</span>
+          </div>
+          <div class="tool-actions">
+            <button
+              type="button"
+              class="tool-action-btn"
+              :aria-label="isFavoriteTool(activeTab) ? '取消收藏' : '收藏该工具'"
+              :title="isFavoriteTool(activeTab) ? '取消收藏' : '收藏'"
+              @click="toggleFavoriteTool(activeTab)"
+            >
+              {{ isFavoriteTool(activeTab) ? '★' : '☆' }}
+            </button>
+            <button
+              type="button"
+              class="tool-action-btn"
+              aria-label="复制工具链接"
+              title="复制链接"
+              @click="copyCurrentToolLink"
+            >
+              🔗
+            </button>
+          </div>
+        </div>
         <div v-if="componentError" class="error-boundary" role="alert">
           <p>{{ componentError }}</p>
           <button @click="componentError = null">重试</button>
         </div>
-        <KeepAlive v-else :max="10">
-          <component :is="currentComponent" :key="activeTab" v-bind="currentComponentProps" />
-        </KeepAlive>
+        <Suspense v-else @pending="toolReady = false" @resolve="toolReady = true">
+          <template #default>
+            <KeepAlive :max="10">
+              <component :is="currentComponent" :key="activeTab" v-bind="currentComponentProps" />
+            </KeepAlive>
+          </template>
+          <template #fallback>
+            <ToolLoading :tool-name="toolMap.get(activeTab)?.name" />
+          </template>
+        </Suspense>
       </div>
     </main>
 
@@ -625,6 +676,76 @@ const handleCommandSelect = (toolId) => {
   animation: fadeIn 0.3s ease-in-out;
 }
 
+.tool-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+:global([data-theme='dark']) .tool-toolbar {
+  background: rgba(26, 26, 46, 0.55);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.tool-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.tool-title-icon {
+  font-size: 1.1rem;
+}
+
+.tool-title-text {
+  font-weight: 900;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:global([data-theme='dark']) .tool-title-text {
+  color: #e0e0e0;
+}
+
+.tool-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.tool-action-btn {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: none;
+  font-size: 1.1rem;
+  display: grid;
+  place-items: center;
+}
+
+:global([data-theme='dark']) .tool-action-btn {
+  background: rgba(42, 58, 74, 0.85);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tool-action-btn:hover {
+  transform: translateY(-1px);
+}
+
 .error-boundary {
   text-align: center;
   padding: 3rem 2rem;
@@ -717,6 +838,11 @@ const handleCommandSelect = (toolId) => {
   .nav {
     gap: 0.4rem;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .nav-group {
+    flex: 1 1 calc(50% - 0.4rem);
   }
 
   .group-title {
@@ -726,7 +852,12 @@ const handleCommandSelect = (toolId) => {
 
   .nav-buttons {
     gap: 0.35rem;
-    min-width: 250px;
+    min-width: 0;
+    width: 100%;
+    position: static;
+    margin-top: 0.5rem;
+    padding: 0.6rem;
+    border-left: none;
   }
 
   .category-btn {
@@ -751,6 +882,16 @@ const handleCommandSelect = (toolId) => {
     padding: 1.25rem;
     margin-bottom: 1.5rem;
   }
+
+  .tool-toolbar {
+    padding: 0.75rem 0.85rem;
+  }
+
+  .tool-action-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -773,10 +914,18 @@ const handleCommandSelect = (toolId) => {
     gap: 0.3rem;
   }
 
+  .nav-group {
+    flex: 1 1 100%;
+  }
+
   .nav-buttons {
     gap: 0.25rem;
-    min-width: 220px;
+    min-width: 0;
+    width: 100%;
     padding: 0.5rem 0 0.5rem 1rem;
+    position: static;
+    margin-top: 0.45rem;
+    border-left: none;
   }
 
   .category-btn {
