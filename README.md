@@ -24,7 +24,7 @@
 - 所有工具在本地计算，不上传任何输入内容。
 - 仅以下三个工具会发起网络请求，且只请求公开接口：
   - 网络工具：`dns.google`（DNS）、`ipapi.co`（本机 IP）
-  - 金属行情：`api.gold-api.com`（报价）、`api.frankfurter.app`（汇率）、Yahoo Finance（走势图，经站点同源代理 `/api/finance/chart`）
+  - 金属行情：`api.gold-api.com`（报价）、`api.frankfurter.dev`（汇率）、Yahoo Finance（走势图，经站点同源代理 `/api/finance/chart`）
 - 历史记录、收藏、笔记、主题等只写入 `localStorage`，可在「设置」中一键导出、导入或清空。
 
 ## 本地开发

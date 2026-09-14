@@ -8,7 +8,8 @@ describe('validateImportedConfig', () => {
       config: {},
       history: [],
       favorites: [],
-      theme: 'light',
+      // 没有主题字段 = 跟随系统，不应被强制成浅色
+      theme: null,
       appState: {
         favoriteTools: [],
         recentTools: [],
@@ -32,6 +33,7 @@ describe('validateImportedConfig', () => {
     expect(result.appState.favoriteTools).toEqual(['json'])
     expect(result.appState.lastTool).toBe('jwt')
     expect(result.appState.notes).toEqual([])
+    expect(validateImportedConfig({ version: '1.0', theme: 'blue' }).theme).toBeNull()
   })
 
   it('caps very long lists', () => {

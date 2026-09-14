@@ -1,3 +1,5 @@
+import { fetchJson } from './http'
+
 const TREND_PROXY_PATH = '/api/finance/chart'
 
 export const TREND_RANGE_CONFIG = Object.freeze({
@@ -10,12 +12,6 @@ export const TREND_RANGE_CONFIG = Object.freeze({
 const roundCoord = (value) => Math.round(value * 100) / 100
 
 const getUnitLabel = (metalDef) => (metalDef.quoteUnit === 'pound' ? 'USD/lb' : 'USD/oz')
-
-const fetchJson = async (url, fetchImpl) => {
-  const response = await fetchImpl(url)
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`)
-  return response.json()
-}
 
 const normalizePoint = (timestamp, price) => ({
   time: new Date(timestamp * 1000).toISOString(),
@@ -81,7 +77,7 @@ export const fetchMetalTrend = async ({
     }
   }
 
-  const payload = await fetchJson(buildTrendRequestUrl(metalDef.chartTicker, range), fetchImpl)
+  const payload = await fetchJson(buildTrendRequestUrl(metalDef.chartTicker, range), { fetchImpl })
   const trend = parseTrendPayload(payload, metalDef, range)
 
   if (cache) cache.set(cacheKey, trend)

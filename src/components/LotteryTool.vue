@@ -581,10 +581,12 @@ const startQuickSpin = () => {
   const items = quickItems.value
   if (items.length < 2) { showToast('至少需要 2 个选项', 'info'); return }
 
-  const count = Math.min(drawCount.value, allowDuplicate.value ? 999 : items.length)
+  // 数量输入框清空/输入非法时 v-model.number 会给出 '' 或 NaN，这里统一夹到 1-100
+  const requested = Math.min(100, Math.max(1, Math.floor(Number(drawCount.value) || 1)))
+  const count = Math.min(requested, allowDuplicate.value ? 999 : items.length)
   if (count <= 0) { showToast('抽取数量无效', 'info'); return }
-  if (!allowDuplicate.value && count > items.length) {
-    showToast(`选项只有 ${items.length} 个，无法不重复抽取 ${drawCount.value} 个`, 'error')
+  if (!allowDuplicate.value && requested > items.length) {
+    showToast(`选项只有 ${items.length} 个，无法不重复抽取 ${requested} 个`, 'error')
     return
   }
 

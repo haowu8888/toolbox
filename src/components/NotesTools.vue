@@ -62,12 +62,12 @@ const filteredNotes = computed(() => {
     filtered = filtered.filter(n => n.tags && n.tags.includes(filterTag.value))
   }
 
-  // 按搜索查询过滤
+  // 按搜索查询过滤（导入的旧数据可能缺少 title/content 字段，需要兜底）
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     filtered = filtered.filter(n =>
-      n.title.toLowerCase().includes(query) ||
-      n.content.toLowerCase().includes(query)
+      String(n.title || '').toLowerCase().includes(query) ||
+      String(n.content || '').toLowerCase().includes(query)
     )
   }
 

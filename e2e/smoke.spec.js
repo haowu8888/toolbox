@@ -81,7 +81,7 @@ const smokeSetup = {
     })
   },
   metalprice: async (page) => {
-    await page.route('https://api.frankfurter.app/*', async (route) => {
+    await page.route('https://api.frankfurter.dev/**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

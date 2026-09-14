@@ -1,8 +1,12 @@
+import { describeRequestError, fetchJson } from './http'
+
 export const OUNCE_TO_GRAMS = 31.1034768
 export const POUND_TO_GRAMS = 453.59237
 
 const GOLD_API_BASE = 'https://api.gold-api.com/price'
-const FRANKFURTER_RATE_URL = 'https://api.frankfurter.app/latest?from=USD&to=CNY'
+// 2026-09 起旧域名 api.frankfurter.app 会 301 跳到 api.frankfurter.dev/v1，
+// 且 301 响应不带 CORS 头、新域名也不在 CSP 白名单里，浏览器会直接报跨域失败，所以这里直连新地址
+const FRANKFURTER_RATE_URL = 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=CNY'
 const UNIT_GRAMS = {
   'troy-ounce': OUNCE_TO_GRAMS,
   pound: POUND_TO_GRAMS,
@@ -16,10 +20,7 @@ export const METAL_DEFS = Object.freeze([
 
 const roundPrice = (value) => Math.round(value * 100) / 100
 
-const toErrorMessage = (error) => {
-  if (error instanceof Error) return error.message
-  return String(error)
-}
+const toErrorMessage = describeRequestError
 
 const getMetalDef = (symbol) => {
   const metalDef = METAL_DEFS.find((item) => item.symbol === symbol)
@@ -30,12 +31,6 @@ const getMetalDef = (symbol) => {
 const getSourceUnitLabel = (quoteUnit) => (quoteUnit === 'pound' ? 'USD/lb' : 'USD/oz')
 
 const convertUsdGramToUsdOunce = (priceUsdPerGram) => roundPrice(priceUsdPerGram * OUNCE_TO_GRAMS)
-
-const fetchJson = async (url, fetchImpl) => {
-  const response = await fetchImpl(url)
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`)
-  return response.json()
-}
 
 const buildErrorItem = (symbol, error) => {
   const metalDef = getMetalDef(symbol)
@@ -80,7 +75,7 @@ export const normalizeRealtimeItem = (payload, usdToCnyRate, metalDef) => {
 }
 
 export const fetchUsdToCnyRate = async ({ fetchImpl = fetch } = {}) => {
-  const payload = await fetchJson(FRANKFURTER_RATE_URL, fetchImpl)
+  const payload = await fetchJson(FRANKFURTER_RATE_URL, { fetchImpl })
   const rate = payload?.rates?.CNY
   if (typeof rate !== 'number') throw new Error('Invalid USD/CNY response')
   return rate
@@ -103,7 +98,7 @@ export const fetchRealtimeSnapshot = async ({
     symbols.map(async (symbol) => {
       try {
         const metalDef = getMetalDef(symbol)
-        const payload = await fetchJson(`${GOLD_API_BASE}/${symbol}`, fetchImpl)
+        const payload = await fetchJson(`${GOLD_API_BASE}/${symbol}`, { fetchImpl })
         return normalizeRealtimeItem(payload, usdToCnyRate, metalDef)
       } catch (error) {
         return buildErrorItem(symbol, error)

@@ -7,6 +7,7 @@ import { useClipboard } from '../composables/useClipboard'
 import { useInterval } from '../composables/useInterval'
 import { METAL_DEFS, fetchRealtimeSnapshot } from '../utils/metalPrice'
 import { createHistoryCache, fetchMetalTrend } from '../utils/metalTrend'
+import { describeRequestError } from '../utils/http'
 
 const AUTO_REFRESH_MS = 60_000
 const RANGE_OPTIONS = [
@@ -27,6 +28,8 @@ const realtimeRefreshing = ref(false)
 const trendRefreshing = ref(false)
 const trendCards = ref(METAL_DEFS.map((item) => createTrendCard(item)))
 let lastSnapshotAt = 0
+// 同一时刻只允许一个实时行情请求在途，避免自动刷新与手动刷新叠加发请求
+let snapshotInFlight = null
 
 const displayItems = computed(() => {
   const itemMap = new Map(snapshot.value.items.map((item) => [item.symbol, item]))
@@ -102,20 +105,27 @@ function copyPrice(item, value, label) {
 }
 
 async function loadSnapshot({ manual = false } = {}) {
-  if (realtimeRefreshing.value) return
-  if (snapshotLoading.value && snapshot.value.items.length) return
+  if (snapshotInFlight) return snapshotInFlight
   if (manual) realtimeRefreshing.value = true
   else snapshotLoading.value = snapshot.value.items.length === 0
 
-  snapshot.value = await fetchRealtimeSnapshot()
-  lastSnapshotAt = Date.now()
+  snapshotInFlight = (async () => {
+    try {
+      snapshot.value = await fetchRealtimeSnapshot()
+      lastSnapshotAt = Date.now()
 
-  if (manual && anyRealtimeData.value) {
-    addHistory('金属行情', buildHistoryText())
-  }
+      if (manual && anyRealtimeData.value) {
+        addHistory('金属行情', buildHistoryText())
+      }
+    } finally {
+      // 无论成功失败都复位状态，避免“刷新中...”按钮永久禁用
+      snapshotLoading.value = false
+      realtimeRefreshing.value = false
+      snapshotInFlight = null
+    }
+  })()
 
-  snapshotLoading.value = false
-  realtimeRefreshing.value = false
+  return snapshotInFlight
 }
 
 async function loadSingleTrend(metalDef, forceRefresh) {
@@ -137,7 +147,7 @@ async function loadSingleTrend(metalDef, forceRefresh) {
     patchTrendCard(metalDef.symbol, {
       accent: metalDef.accent,
       loading: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: describeRequestError(error),
     })
   }
 }

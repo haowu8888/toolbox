@@ -14,7 +14,8 @@ export const CONFIG_VERSION = '1.0'
 export const MAX_IMPORT_SIZE = 5 * 1024 * 1024
 const MAX_IMPORT_ITEMS = 500
 
-const normalizeTheme = (theme) => (theme === 'dark' ? 'dark' : 'light')
+// null 表示“跟随系统”，导入时不写入主题键，避免把跟随系统的用户强制切成浅色
+const normalizeTheme = (theme) => (theme === 'dark' || theme === 'light' ? theme : null)
 
 const normalizeAppState = (appState = {}) => ({
   favoriteTools: Array.isArray(appState.favoriteTools) ? appState.favoriteTools : [],
@@ -25,7 +26,7 @@ const normalizeAppState = (appState = {}) => ({
   lotteryRecords: Array.isArray(appState.lotteryRecords) ? appState.lotteryRecords : [],
 })
 
-const readThemeValue = () => normalizeTheme(readStorageRaw(STORAGE_KEYS.theme, 'light'))
+const readThemeValue = () => normalizeTheme(readStorageRaw(STORAGE_KEYS.theme))
 
 const readAppState = () => {
   const defaults = defaultAppState()
@@ -131,7 +132,8 @@ export const useConfig = (key = STORAGE_KEYS.config) => {
     writeStorageJson(STORAGE_KEYS.config, normalized.config)
     writeStorageJson(STORAGE_KEYS.history, normalized.history)
     writeStorageJson(STORAGE_KEYS.favorites, normalized.favorites)
-    writeStorageRaw(STORAGE_KEYS.theme, normalized.theme)
+    if (normalized.theme) writeStorageRaw(STORAGE_KEYS.theme, normalized.theme)
+    else removeStorageKey(STORAGE_KEYS.theme)
     writeAppState(normalized.appState)
     return data
   }

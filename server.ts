@@ -15,7 +15,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'referrer-policy': 'strict-origin-when-cross-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
   'content-security-policy':
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://dns.google https://ipapi.co https://api.gold-api.com https://api.frankfurter.app; font-src 'self' data:; manifest-src 'self'; worker-src 'self' blob:;",
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://dns.google https://ipapi.co https://api.gold-api.com https://api.frankfurter.dev; font-src 'self' data:; manifest-src 'self'; worker-src 'self' blob:;",
 }
 
 const NO_CACHE = 'no-cache, must-revalidate'

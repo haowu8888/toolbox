@@ -27,12 +27,20 @@ const rgbToHex = (r, g, b) => {
     '#' +
     [r, g, b]
       .map((x) => {
-        const hex = x.toString(16)
+        const hex = Math.round(x).toString(16)
         return hex.length === 1 ? '0' + hex : hex
       })
       .join('')
       .toUpperCase()
   )
+}
+
+// 数字输入框清空时 v-model.number 会给出 ''，越界值也要夹到合法范围，否则会生成 "#NaNNaNNaN"
+const clampChannel = (value, max) => {
+  if (value === '' || value === null || value === undefined) return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return Math.min(max, Math.max(0, Math.round(num)))
 }
 
 // RGB 转 HSL
@@ -103,6 +111,10 @@ const hslToRgb = (h, s, l) => {
 
 const isUpdating = ref(false)
 
+// 三个 watcher 互相回写，必须用 flush: 'sync' 让 isUpdating 守卫在同一调用栈内生效；
+// 否则默认的异步批处理会在守卫复位后才触发另一侧 watcher，把用户正在输入的 HSL/RGB 值用四舍五入后的结果覆盖掉
+const SYNC = { flush: 'sync' }
+
 // 监听 HEX 输入
 watch(
   () => colorInput.value,
@@ -116,7 +128,8 @@ watch(
       hslInput.value = hsl
       isUpdating.value = false
     }
-  }
+  },
+  SYNC,
 )
 
 // 监听 RGB 输入
@@ -124,13 +137,17 @@ watch(
   () => rgbInput.value,
   (newValue) => {
     if (isUpdating.value) return
+    const r = clampChannel(newValue.r, 255)
+    const g = clampChannel(newValue.g, 255)
+    const b = clampChannel(newValue.b, 255)
+    if (r === null || g === null || b === null) return
     isUpdating.value = true
-    colorInput.value = rgbToHex(newValue.r, newValue.g, newValue.b)
-    const hsl = rgbToHsl(newValue.r, newValue.g, newValue.b)
+    colorInput.value = rgbToHex(r, g, b)
+    const hsl = rgbToHsl(r, g, b)
     hslInput.value = hsl
     isUpdating.value = false
   },
-  { deep: true }
+  { deep: true, ...SYNC },
 )
 
 // 监听 HSL 输入
@@ -138,13 +155,17 @@ watch(
   () => hslInput.value,
   (newValue) => {
     if (isUpdating.value) return
+    const h = clampChannel(newValue.h, 360)
+    const s = clampChannel(newValue.s, 100)
+    const l = clampChannel(newValue.l, 100)
+    if (h === null || s === null || l === null) return
     isUpdating.value = true
-    const rgb = hslToRgb(newValue.h, newValue.s, newValue.l)
+    const rgb = hslToRgb(h, s, l)
     rgbInput.value = rgb
     colorInput.value = rgbToHex(rgb.r, rgb.g, rgb.b)
     isUpdating.value = false
   },
-  { deep: true }
+  { deep: true, ...SYNC },
 )
 
 const copyToClipboard = (text) => copyText(text, { history: '颜色工具' })

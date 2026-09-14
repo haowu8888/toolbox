@@ -65,10 +65,19 @@ const typeNames = {
 const copyToClipboard = () =>
   copyText(output.value, { history: typeNames[encodingType.value] || '编码转换' })
 
+// 编码 ↔ 解码互为逆操作：交换输入输出的同时翻转方向，交换后结果才和原输入一致
+const INVERSE_TYPE = {
+  'base64-encode': 'base64-decode',
+  'base64-decode': 'base64-encode',
+  'url-encode': 'url-decode',
+  'url-decode': 'url-encode',
+}
+
 const swapInput = () => {
   const temp = inputText.value
   inputText.value = output.value
   output.value = temp
+  encodingType.value = INVERSE_TYPE[encodingType.value] || encodingType.value
   handleEncode()
 }
 

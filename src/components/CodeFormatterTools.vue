@@ -232,6 +232,12 @@ const formatHTML = (html) => {
   while (i < html.length) {
     if (html[i] === '<') {
       const end = html.indexOf('>', i)
+      if (end === -1) {
+        // 标签没有闭合的 '>'：把剩余内容当文本输出并结束，否则 i 会被重置为 0 造成死循环
+        const rest = html.substring(i).trim()
+        if (rest) result += indentStr.repeat(indent) + rest + '\n'
+        break
+      }
       const tag = html.substring(i, end + 1)
 
       if (tag.startsWith('</')) {

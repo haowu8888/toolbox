@@ -1,6 +1,7 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
+import { convertBase as convertBaseValue } from '../utils/numberBase'
 
 const { copyText } = useClipboard()
 
@@ -52,23 +53,14 @@ const convertTemp = () => {
   return result.toFixed(2)
 }
 
-// 进制转换
+// 进制转换（逐字符校验 + BigInt，非法字符会明确报错而不是被 parseInt 截断）
 const numberValue = ref('')
 const fromBase = ref('10')
 const toBase = ref('2')
 
-const convertBase = () => {
-  if (!numberValue.value.trim()) return ''
-  try {
-    const fromBaseNum = parseInt(fromBase.value)
-    const toBaseNum = parseInt(toBase.value)
-    const decimal = parseInt(numberValue.value, fromBaseNum)
-    if (isNaN(decimal)) return '无效输入'
-    return decimal.toString(toBaseNum).toUpperCase()
-  } catch (err) {
-    return '转换失败'
-  }
-}
+const baseConversion = computed(() => convertBaseValue(numberValue.value, fromBase.value, toBase.value))
+const baseResult = computed(() => (baseConversion.value.ok ? baseConversion.value.value : ''))
+const baseError = computed(() => (baseConversion.value.ok ? '' : baseConversion.value.error))
 
 const copyToClipboard = (text, label) =>
   copyText(text, { history: label ? ['单位转换', `${label}: ${text}`] : null })
@@ -265,14 +257,14 @@ const convertVolume = () => {
           </select>
         </div>
         <div class="input-group">
-          <div class="result-field">{{ convertBase() || '0' }}</div>
+          <div class="result-field" :class="{ 'has-error': baseError }">{{ baseError || baseResult || '0' }}</div>
           <select v-model="toBase" class="select-field">
             <option value="2">二进制 (Binary)</option>
             <option value="8">八进制 (Octal)</option>
             <option value="10">十进制 (Decimal)</option>
             <option value="16">十六进制 (Hex)</option>
           </select>
-          <button @click="copyToClipboard(convertBase(), '进制转换')" class="btn-copy">📋</button>
+          <button @click="copyToClipboard(baseResult, '进制转换')" class="btn-copy" :disabled="!baseResult">📋</button>
         </div>
       </div>
     </div>
@@ -381,6 +373,19 @@ h2 {
   font-family: 'Courier New', monospace;
   cursor: text;
   user-select: all;
+}
+
+.result-field.has-error {
+  color: var(--danger, #c62828);
+  font-weight: 500;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.btn-copy:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-copy {

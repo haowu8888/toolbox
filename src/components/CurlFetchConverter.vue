@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { buildFetch, parseCurl } from '../utils/curl'
 
 const { copyText } = useClipboard()
 const { showToast } = useToast()
@@ -11,134 +12,6 @@ const { addHistory } = useHistory()
 const curlInput = ref('')
 const output = ref('')
 const error = ref('')
-
-const tokenize = (input) => {
-  const tokens = []
-  let current = ''
-  let quote = null
-  let escaping = false
-
-  for (let i = 0; i < input.length; i++) {
-    const char = input[i]
-
-    if (escaping) {
-      current += char
-      escaping = false
-      continue
-    }
-
-    if (!quote && /\s/.test(char)) {
-      if (current) tokens.push(current)
-      current = ''
-      continue
-    }
-
-    if (char === '\\' && quote !== "'") {
-      escaping = true
-      continue
-    }
-
-    if (char === "'" || char === '"') {
-      if (quote === char) {
-        quote = null
-      } else if (!quote) {
-        quote = char
-      } else {
-        current += char
-      }
-      continue
-    }
-
-    current += char
-  }
-
-  if (current) tokens.push(current)
-  return tokens
-}
-
-const parseCurl = (cmd) => {
-  const tokens = tokenize(cmd).filter(Boolean)
-  if (tokens.length === 0) throw new Error('请输入 curl 命令')
-  if (tokens[0] === 'curl') tokens.shift()
-
-  let url = ''
-  let method = ''
-  const headers = []
-  const data = []
-
-  const dataFlags = new Set(['-d', '--data', '--data-raw', '--data-binary', '--data-urlencode'])
-  const headerFlags = new Set(['-H', '--header'])
-
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i]
-
-    if (t === '--url') {
-      url = tokens[i + 1] || ''
-      i++
-      continue
-    }
-
-    if (t === '-X' || t === '--request') {
-      method = (tokens[i + 1] || '').toUpperCase()
-      i++
-      continue
-    }
-
-    if (headerFlags.has(t)) {
-      headers.push(tokens[i + 1] || '')
-      i++
-      continue
-    }
-
-    if (dataFlags.has(t)) {
-      data.push(tokens[i + 1] || '')
-      i++
-      continue
-    }
-
-    if (!t.startsWith('-') && !url) {
-      url = t
-    }
-  }
-
-  if (!url) throw new Error('未解析到 URL（请确保命令包含 URL）')
-  if (!method && data.length > 0) method = 'POST'
-  if (!method) method = 'GET'
-
-  const headerObj = {}
-  for (const line of headers) {
-    const idx = line.indexOf(':')
-    if (idx === -1) continue
-    const key = line.slice(0, idx).trim()
-    const value = line.slice(idx + 1).trim()
-    if (!key) continue
-    headerObj[key] = value
-  }
-
-  const body = data.length > 0 ? data.join('&') : ''
-
-  return { url, method, headers: headerObj, body }
-}
-
-const buildFetch = ({ url, method, headers, body }) => {
-  const lines = []
-  lines.push(`fetch(${JSON.stringify(url)}, {`)
-  if (method && method !== 'GET') lines.push(`  method: ${JSON.stringify(method)},`)
-  if (headers && Object.keys(headers).length > 0) {
-    const headerLines = JSON.stringify(headers, null, 2).split('\n')
-    lines.push(`  headers: ${headerLines[0]}`)
-    for (let i = 1; i < headerLines.length; i++) {
-      lines.push(`  ${headerLines[i]}`)
-    }
-    lines[lines.length - 1] += ','
-  }
-  if (body) lines.push(`  body: ${JSON.stringify(body)},`)
-  lines.push('})')
-  lines.push('  .then((res) => res.text())')
-  lines.push('  .then(console.log)')
-  lines.push('  .catch(console.error)')
-  return lines.join('\n')
-}
 
 const example = computed(
   () =>
@@ -209,9 +82,10 @@ const clearAll = () => {
     <div class="tips">
       <div class="tip-title">说明</div>
       <ul>
-        <li>支持：URL、<code>-X/--request</code>、<code>-H/--header</code>、<code>-d/--data*</code></li>
-        <li>如果包含 <code>-d</code> 但未指定方法，会默认 <code>POST</code></li>
-        <li>遇到 <code>@file</code> 形式的数据需手动改成 <code>FormData</code> 或读取文件</li>
+        <li>支持：URL、<code>-X/--request</code>、<code>-I</code>、<code>-G</code>、<code>-H/--header</code>、<code>-d/--data*</code>、<code>--data-urlencode</code>、<code>-F/--form</code>、<code>-u/--user</code>、<code>-A</code>、<code>-e</code>、<code>-b</code>、<code>--oauth2-bearer</code></li>
+        <li>可直接粘贴浏览器「Copy as cURL」得到的多行命令（含 <code>\</code> 续行与 <code>$'...'</code> 引号）</li>
+        <li>如果包含 <code>-d</code> 但未指定方法，会默认 <code>POST</code>；JSON 请求体会自动整理为 <code>JSON.stringify(...)</code></li>
+        <li>遇到 <code>@file</code> 形式的数据需手动改成 <code>File</code> 对象，转换结果顶部会给出提示</li>
       </ul>
     </div>
   </div>

@@ -46,6 +46,34 @@ describe('metalPrice conversions', () => {
 })
 
 describe('metalPrice fetching', () => {
+  it('requests the Frankfurter v1 endpoint on the current host', async () => {
+    // 旧域名 api.frankfurter.app 会 301 到 .dev 且不带 CORS 头，浏览器会直接失败，这里锁定新地址
+    const calls = []
+    const fetchImpl = async (url) => {
+      calls.push(url)
+      return { ok: true, json: async () => ({ rates: { CNY: 7.01 } }) }
+    }
+
+    await expect(fetchUsdToCnyRate({ fetchImpl })).resolves.toBe(7.01)
+    expect(calls).toEqual(['https://api.frankfurter.dev/v1/latest?base=USD&symbols=CNY'])
+  })
+
+  it('turns network-level failures into a readable exchange rate error', async () => {
+    const fetchImpl = async (url) => {
+      if (url.includes('frankfurter')) throw new TypeError('Failed to fetch')
+      return {
+        ok: true,
+        json: async () => ({ symbol: 'XAU', name: 'Gold', price: 3000, updatedAt: '2026-03-27T00:00:00Z' }),
+      }
+    }
+
+    const result = await fetchRealtimeSnapshot({ fetchImpl, symbols: ['XAU'] })
+
+    expect(result.usdToCnyRate).toBeNull()
+    expect(result.exchangeRateError).toBe('网络请求失败，请检查网络连接后重试')
+    expect(result.items[0]).toMatchObject({ symbol: 'XAU', priceUsdPerOunce: 3000, error: null })
+  })
+
   it('reads USD to CNY rate from Frankfurter response', async () => {
     const fetchImpl = async () => ({
       ok: true,
@@ -112,7 +140,7 @@ describe('metalPrice fetching', () => {
     })
     expect(result.items.find((item) => item.symbol === 'XAG')).toMatchObject({
       symbol: 'XAG',
-      error: 'Request failed: 500',
+      error: '接口返回 500',
     })
     expect(result.items.find((item) => item.symbol === 'HG')).toMatchObject({
       sourceUnitLabel: 'USD/lb',

@@ -3,6 +3,12 @@ import { ref, computed } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
 import { randomString, uuidV4 } from '../utils/random'
+import {
+  toCamelCase as convertCamelCase,
+  toKebabCase as convertKebabCase,
+  toPascalCase as convertPascalCase,
+  toSnakeCase as convertSnakeCase,
+} from '../utils/textCase'
 
 const { copyText } = useClipboard()
 const { addHistory } = useHistory()
@@ -77,32 +83,13 @@ const removeDuplicates = () => {
   return unique.join('\n')
 }
 
-// 大小写转换
+// 大小写转换（按行独立处理，正确拆分 XMLHttpRequest / v2Beta 这类缩写与数字）
 const toUpperCase = () => inputText.value.toUpperCase()
 const toLowerCase = () => inputText.value.toLowerCase()
-const toCamelCase = () => {
-  return inputText.value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (m, c) => c.toUpperCase())
-}
-const toPascalCase = () => {
-  return inputText.value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (m, c) => c.toUpperCase())
-    .replace(/^./, c => c.toUpperCase())
-}
-const toSnakeCase = () => {
-  return inputText.value
-    .replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
-    .replace(/\s+/g, '_')
-    .toLowerCase()
-}
-const toKebabCase = () => {
-  return inputText.value
-    .replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
-    .replace(/\s+/g, '-')
-    .toLowerCase()
-}
+const toCamelCase = () => convertCamelCase(inputText.value)
+const toPascalCase = () => convertPascalCase(inputText.value)
+const toSnakeCase = () => convertSnakeCase(inputText.value)
+const toKebabCase = () => convertKebabCase(inputText.value)
 
 // 输出
 const output = ref('')

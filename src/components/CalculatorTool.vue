@@ -12,12 +12,18 @@ const operation = ref(null)
 const newNumber = ref(true)
 const history = ref([])
 
+// 二进制浮点误差（0.1 + 0.2 = 0.30000000000000004）对计算器用户毫无意义，统一按 12 位有效数字修约
+const normalizeNumber = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Error'
+  return parseFloat(value.toPrecision(12))
+}
+
 const safeCalc = (a, op, b) => {
   switch (op) {
-    case '+': return a + b
-    case '-': return a - b
-    case '*': return a * b
-    case '/': return b !== 0 ? a / b : 'Error'
+    case '+': return normalizeNumber(a + b)
+    case '-': return normalizeNumber(a - b)
+    case '*': return normalizeNumber(a * b)
+    case '/': return b !== 0 ? normalizeNumber(a / b) : 'Error'
     default: return 'Error'
   }
 }
@@ -33,13 +39,19 @@ const handleNumber = (num) => {
 
 const handleOperation = (op) => {
   const currentValue = parseFloat(display.value)
+  if (Number.isNaN(currentValue)) {
+    // 上一步是 Error：从头开始，不把 NaN 带进后续运算
+    handleClear()
+    return
+  }
 
   if (previousValue.value === null) {
     previousValue.value = currentValue
-  } else if (operation.value) {
+  } else if (operation.value && !newNumber.value) {
+    // 只有在用户输入了新操作数后才结算，连续点运算符只是改变运算类型
     const result = safeCalc(previousValue.value, operation.value, currentValue)
     display.value = result.toString()
-    previousValue.value = result
+    previousValue.value = result === 'Error' ? null : result
   }
 
   operation.value = op
@@ -101,13 +113,13 @@ const handlePlusMinus = () => {
 
 const handleSquare = () => {
   const value = parseFloat(display.value)
-  display.value = (value * value).toString()
+  display.value = normalizeNumber(value * value).toString()
   newNumber.value = true
 }
 
 const handleSquareRoot = () => {
   const value = parseFloat(display.value)
-  display.value = Math.sqrt(value).toString()
+  display.value = value < 0 ? 'Error' : normalizeNumber(Math.sqrt(value)).toString()
   newNumber.value = true
 }
 

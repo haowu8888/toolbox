@@ -52,7 +52,9 @@ src/
 
 ### Utils (`src/utils/`)
 
-`cron.js` (parse/describe/next runs), `diff.js` (patience + bounded LCS line diff, inline diff, hunks, unified format), `jwt.js`, `htmlEntities.js`, `format.js` (`formatBytes`, `formatDateTime`, `formatRelativeTime`, `formatDuration`, `truncate`), `random.js` (Web Crypto, unbiased `randomInt`, `shuffle`, `weightedIndex`, `uuidV4`, `createId`), `download.js` (`downloadText/Json/Blob/DataUrl`), `storageKeys.js` (`STORAGE_KEYS` + safe `readStorageJson/writeStorageJson/...`), plus `metalPrice.js`, `metalTrend.js`, `urlUtils.js`, `chmodUtils.js`.
+`cron.js` (parse/describe/next runs), `diff.js` (patience + bounded LCS line diff, inline diff, hunks, unified format), `jwt.js`, `htmlEntities.js`, `format.js` (`formatBytes`, `formatDateTime`, `formatRelativeTime`, `formatDuration`, `truncate`), `random.js` (Web Crypto, unbiased `randomInt`, `shuffle`, `weightedIndex`, `uuidV4`, `createId`), `download.js` (`downloadText/Json/Blob/DataUrl`), `storageKeys.js` (`STORAGE_KEYS` + safe `readStorageJson/writeStorageJson/...`), `http.js` (`fetchJson` with a 10 s `AbortSignal.timeout`, `describeRequestError` → Chinese user-facing message; **use it for every network call**), `validators.js` (`VALIDATOR_DEFS` for the 数据验证 tool: email / CN mobile / E.164 / IPv4 / http URL via `new URL` / 18-digit ID card with GB 11643 check digit), `numberBase.js` (`convertBase`, BigInt, per-character validation), `textCase.js` (camel / Pascal / snake / kebab / CONSTANT, acronym-aware, line by line), `curl.js` (`tokenizeCommand` shell-style tokenizer incl. `$'...'` and line continuations, `parseCurl`, `buildFetch`), plus `metalPrice.js`, `metalTrend.js`, `urlUtils.js`, `chmodUtils.js`.
+
+Metal price data sources: gold-api (`api.gold-api.com/price/<XAU|XAG|HG>`) and Frankfurter **`api.frankfurter.dev/v1`** (the old `api.frankfurter.app` host 301-redirects without CORS headers, so browsers fail; keep the `.dev` host in the CSP `connect-src` of both `server.ts` and `nginx.conf`).
 
 Put new non-UI logic here with a `*.test.js` next to it; keep components thin.
 

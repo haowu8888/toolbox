@@ -23,6 +23,12 @@ const safeHighlightedOutput = computed(() => {
   return sanitizeHtml(output.value)
 })
 
+const buildRegex = (extraFlags = '') => {
+  const flagStr = flags.value.join('')
+  const merged = [...new Set((flagStr + extraFlags).split(''))].join('')
+  return new RegExp(pattern.value, merged)
+}
+
 const testRegex = () => {
   if (!pattern.value.trim() || !testText.value.trim()) {
     output.value = ''
@@ -33,12 +39,17 @@ const testRegex = () => {
 
   try {
     error.value = ''
-    const regex = new RegExp(pattern.value, flags.value.join(''))
-    const allMatches = testText.value.match(regex)
+    // 列出全部匹配时始终按全局匹配枚举，避免未勾选 g 时 match() 把捕获组当成“匹配项”展示
+    const regex = buildRegex('g')
+    const allMatches = []
+    for (const match of testText.value.matchAll(regex)) {
+      allMatches.push(match[0])
+      if (allMatches.length >= 1000) break
+    }
 
-    if (allMatches) {
+    if (allMatches.length) {
       matches.value = allMatches
-      output.value = `找到 ${allMatches.length} 个匹配项`
+      output.value = `找到 ${allMatches.length}${allMatches.length >= 1000 ? '+' : ''} 个匹配项`
     } else {
       matches.value = []
       output.value = '未找到匹配项'
@@ -58,7 +69,7 @@ const replace = () => {
 
   try {
     error.value = ''
-    const regex = new RegExp(pattern.value, flags.value.join(''))
+    const regex = buildRegex()
     const result = testText.value.replace(regex, replaceText.value)
     output.value = result
     addHistory('正则替换', result)
@@ -75,8 +86,8 @@ const highlightMatches = () => {
   }
 
   try {
-    const flagStr = flags.value.join('')
-    const regex = new RegExp(pattern.value, flagStr.includes('g') ? flagStr : flagStr + 'g')
+    error.value = ''
+    const regex = buildRegex('g')
     let result = ''
     let lastIndex = 0
     let match

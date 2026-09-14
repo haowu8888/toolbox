@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
+import { VALIDATOR_DEFS, getValidator } from '../utils/validators'
 
 const { copyText } = useClipboard()
 
@@ -8,38 +9,7 @@ const inputValue = ref('')
 const validationType = ref('email')
 const validationResult = ref(null)
 
-const validators = {
-  email: {
-    name: '邮箱验证',
-    pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-    description: '验证邮箱格式是否正确',
-  },
-  phone: {
-    name: '手机号验证',
-    pattern: /^1[3-9]\d{9}$/,
-    description: '验证中国大陆11位手机号',
-  },
-  url: {
-    name: 'URL 验证',
-    pattern: /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/,
-    description: '验证URL格式是否正确',
-  },
-  phone_int: {
-    name: '国际电话号码',
-    pattern: /^\+?[1-9]\d{1,14}$/,
-    description: 'E.164格式的国际电话号码',
-  },
-  ipv4: {
-    name: 'IPv4 地址',
-    pattern: /^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/,
-    description: '验证 IPv4 地址格式',
-  },
-  idcard: {
-    name: '身份证号验证',
-    pattern: /^\d{18}$|^\d{17}[\dXx]$/,
-    description: '验证18位或17位身份证号',
-  },
-}
+const validators = VALIDATOR_DEFS
 
 const validate = () => {
   if (!inputValue.value.trim()) {
@@ -47,12 +17,13 @@ const validate = () => {
     return
   }
 
-  const validator = validators[validationType.value]
-  const isValid = validator.pattern.test(inputValue.value.trim())
+  const validator = getValidator(validationType.value)
+  if (!validator) return
+  const input = inputValue.value.trim()
 
   validationResult.value = {
-    isValid,
-    input: inputValue.value.trim(),
+    isValid: validator.test(input),
+    input,
     type: validator.name,
   }
 }
@@ -72,17 +43,7 @@ const clearAll = () => {
   validationResult.value = null
 }
 
-const examples = computed(() => {
-  const exampleMap = {
-    email: 'example@email.com',
-    phone: '13812345678',
-    url: 'https://www.example.com',
-    phone_int: '+86 138 1234 5678',
-    ipv4: '192.168.1.1',
-    idcard: '110101199003076013',
-  }
-  return exampleMap[validationType.value] || ''
-})
+const examples = computed(() => getValidator(validationType.value)?.example || '')
 </script>
 
 <template>
@@ -92,8 +53,8 @@ const examples = computed(() => {
 
     <div class="validator-select">
       <label>选择验证类型：</label>
-      <select v-model="validationType" @change="clearAll" class="select-field">
-        <option v-for="(validator, key) in validators" :key="key" :value="key">
+      <select v-model="validationType" @change="clearAll" class="select-field" aria-label="验证类型">
+        <option v-for="validator in validators" :key="validator.key" :value="validator.key">
           {{ validator.name }} - {{ validator.description }}
         </option>
       </select>
@@ -143,10 +104,10 @@ const examples = computed(() => {
     <div class="rules-section">
       <div class="section-title">验证规则说明</div>
       <div class="rules-grid">
-        <div v-for="(validator, key) in validators" :key="key" class="rule-item">
+        <div v-for="validator in validators" :key="validator.key" class="rule-item">
           <div class="rule-type">{{ validator.name }}</div>
           <div class="rule-desc">{{ validator.description }}</div>
-          <div class="rule-pattern">{{ validator.pattern }}</div>
+          <div class="rule-pattern">{{ validator.rule }}</div>
         </div>
       </div>
     </div>
