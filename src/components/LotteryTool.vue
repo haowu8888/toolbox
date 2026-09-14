@@ -2,6 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { createId, randomFloat, randomInt, sampleWithoutReplacement, weightedIndex } from '../utils/random'
+import { readStorageArray, STORAGE_KEYS, writeStorageJson } from '../utils/storageKeys'
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
@@ -35,14 +37,11 @@ const newTemplateName = ref('')
 const newTemplateItems = ref('')
 
 const loadCustomTemplates = () => {
-  try {
-    const saved = localStorage.getItem('toolbox_lottery_templates')
-    if (saved) customTemplates.value = JSON.parse(saved)
-  } catch { customTemplates.value = [] }
+  customTemplates.value = readStorageArray(STORAGE_KEYS.lotteryTemplates)
 }
 
 const saveCustomTemplates = () => {
-  localStorage.setItem('toolbox_lottery_templates', JSON.stringify(customTemplates.value))
+  writeStorageJson(STORAGE_KEYS.lotteryTemplates, customTemplates.value)
 }
 
 const addCustomTemplate = () => {
@@ -54,7 +53,7 @@ const addCustomTemplate = () => {
     showToast('模板名称已存在', 'error'); return
   }
   customTemplates.value.push({
-    id: Date.now(), name, items,
+    id: createId('t-'), name, items,
     createdAt: new Date().toLocaleDateString(),
   })
   saveCustomTemplates()
@@ -175,16 +174,11 @@ const records = ref([])
 const newRecordsCount = ref(0)
 
 const loadRecords = () => {
-  try {
-    const saved = localStorage.getItem('toolbox_lottery_records')
-    if (saved) records.value = JSON.parse(saved)
-  } catch { records.value = [] }
+  records.value = readStorageArray(STORAGE_KEYS.lotteryRecords)
 }
 
 const saveRecords = () => {
-  try {
-    localStorage.setItem('toolbox_lottery_records', JSON.stringify(records.value))
-  } catch (e) { console.error('保存抽奖记录失败', e) }
+  writeStorageJson(STORAGE_KEYS.lotteryRecords, records.value)
 }
 
 const addRecord = (mode, items, results) => {
@@ -192,7 +186,7 @@ const addRecord = (mode, items, results) => {
   const pad = (n) => String(n).padStart(2, '0')
   const time = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
   records.value.unshift({
-    id: Date.now(), time, mode,
+    id: createId('r-'), time, mode,
     items: items.slice(0, 10),
     results,
     drawCount: results.length,
@@ -594,18 +588,10 @@ const startQuickSpin = () => {
     return
   }
 
-  // Determine winners
-  let winners = []
-  if (allowDuplicate.value) {
-    for (let i = 0; i < count; i++) winners.push(items[Math.floor(Math.random() * items.length)])
-  } else {
-    const pool = [...items]
-    for (let i = 0; i < count; i++) {
-      const idx = Math.floor(Math.random() * pool.length)
-      winners.push(pool[idx])
-      pool.splice(idx, 1)
-    }
-  }
+  // Determine winners（Web Crypto 随机源，避免 Math.random 的可预测性）
+  const winners = allowDuplicate.value
+    ? Array.from({ length: count }, () => items[randomInt(0, items.length - 1)])
+    : sampleWithoutReplacement(items, count)
 
   // Wheel targets first winner
   const winnerIdx = items.indexOf(winners[0])
@@ -623,10 +609,10 @@ const startQuickSpin = () => {
   const currentAngle = ((startRot % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
   let delta = targetAngle - currentAngle
   if (delta < 0) delta += Math.PI * 2
-  const fullSpins = 5 + Math.floor(Math.random() * 4)
+  const fullSpins = randomInt(5, 8)
   const totalRot = fullSpins * Math.PI * 2 + delta
   const startTime = performance.now()
-  const duration = 4000 + Math.random() * 1500
+  const duration = 4000 + randomFloat() * 1500
 
   const animate = (now) => {
     const elapsed = now - startTime
@@ -659,14 +645,8 @@ const startAdvancedSpin = () => {
   if (items.length === 0) { showToast('请先添加奖品', 'info'); return }
   if (totalWeight.value === 0) { showToast('所有奖品权重为 0', 'error'); return }
 
-  // Weighted random
-  const rand = Math.random() * totalWeight.value
-  let cumulative = 0
-  let winnerIdx = 0
-  for (let i = 0; i < items.length; i++) {
-    cumulative += items[i].weight
-    if (rand < cumulative) { winnerIdx = i; break }
-  }
+  // Weighted random（Web Crypto 随机源）
+  const winnerIdx = Math.max(0, weightedIndex(items.map((item) => item.weight)))
 
   isAdvancedSpinning.value = true
   advancedResult.value = []
@@ -684,11 +664,11 @@ const startAdvancedSpin = () => {
   const currentAngle = ((startRot % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
   let delta = targetAngle - currentAngle
   if (delta < 0) delta += Math.PI * 2
-  const fullSpins = 5 + Math.floor(Math.random() * 4)
+  const fullSpins = randomInt(5, 8)
   const totalRot = fullSpins * Math.PI * 2 + delta
 
   const startTime = performance.now()
-  const duration = 4500 + Math.random() * 1500
+  const duration = 4500 + randomFloat() * 1500
 
   const animate = (now) => {
     const elapsed = now - startTime

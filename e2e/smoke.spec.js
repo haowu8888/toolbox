@@ -109,10 +109,9 @@ const smokeSetup = {
       })
     })
 
-    await page.route('https://corsproxy.io/?*', async (route) => {
+    await page.route('**/api/finance/chart/**', async (route) => {
       const url = new URL(route.request().url())
-      const target = decodeURIComponent(url.search.slice(1))
-      const ticker = target.match(/chart\/([^?]+)/)?.[1]
+      const ticker = decodeURIComponent(url.pathname.split('/').pop())
 
       await route.fulfill({
         status: 200,

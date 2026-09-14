@@ -1,235 +1,41 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { useToast } from '../composables/useToast'
+import { computed, ref } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
+import { useToast } from '../composables/useToast'
+import { formatDateTime, formatRelativeTime } from '../utils/format'
+import { CRON_FIELDS, CRON_PRESETS, getNextCronRuns, parseCron, WEEKDAY_LABELS } from '../utils/cron'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 const { addHistory } = useHistory()
+const { showToast } = useToast()
 
 const cronExpression = ref('* * * * *')
-const error = ref('')
+const runCount = ref(5)
+const runCountOptions = [5, 10, 20]
 
-const fieldLabels = ['分', '时', '日', '月', '周']
-
-const quickPatterns = [
-  { label: '每分钟', value: '* * * * *' },
-  { label: '每小时', value: '0 * * * *' },
-  { label: '每天零点', value: '0 0 * * *' },
-  { label: '每周一', value: '0 0 * * 1' },
-  { label: '每月1号', value: '0 0 1 * *' },
-  { label: '工作日9点', value: '0 9 * * 1-5' },
-]
-
-const weekDayNames = ['日', '一', '二', '三', '四', '五', '六']
+const parsed = computed(() => parseCron(cronExpression.value))
+const error = computed(() => parsed.value.error)
+const description = computed(() => parsed.value.description)
 
 const cronFields = computed(() => {
   const parts = cronExpression.value.trim().split(/\s+/)
   if (parts.length !== 5) return []
-  return parts.map((val, idx) => ({
-    value: val,
-    label: fieldLabels[idx],
+  return parts.map((value, index) => ({
+    value,
+    label: CRON_FIELDS[index].label,
+    range:
+      CRON_FIELDS[index].key === 'dayOfWeek'
+        ? '0-6（7=周日）'
+        : `${CRON_FIELDS[index].min}-${CRON_FIELDS[index].max}`,
   }))
 })
 
-/**
- * Validate a single cron field against its allowed range
- */
-const validateField = (field, min, max) => {
-  if (field === '*') return true
+const nextExecutions = computed(() =>
+  parsed.value.ok ? getNextCronRuns(parsed.value, { count: runCount.value }) : [],
+)
 
-  const parts = field.split(',')
-  for (const part of parts) {
-    // Handle */n
-    if (part.startsWith('*/')) {
-      const step = parseInt(part.substring(2), 10)
-      if (isNaN(step) || step < 1) return false
-      continue
-    }
-
-    // Handle range with optional step: a-b or a-b/n
-    if (part.includes('-')) {
-      const [rangePart, stepPart] = part.split('/')
-      const [startStr, endStr] = rangePart.split('-')
-      const start = parseInt(startStr, 10)
-      const end = parseInt(endStr, 10)
-      if (isNaN(start) || isNaN(end)) return false
-      if (start < min || end > max || start > end) return false
-      if (stepPart !== undefined) {
-        const step = parseInt(stepPart, 10)
-        if (isNaN(step) || step < 1) return false
-      }
-      continue
-    }
-
-    // Handle single number
-    const num = parseInt(part, 10)
-    if (isNaN(num) || num < min || num > max) return false
-  }
-  return true
-}
-
-/**
- * Describe a single cron field in Chinese
- */
-const describeField = (field, type) => {
-  if (field === '*') {
-    return '每' + type
-  }
-
-  if (field.startsWith('*/')) {
-    const step = field.substring(2)
-    return `每隔 ${step} ${type}`
-  }
-
-  if (field.includes(',')) {
-    const parts = field.split(',')
-    if (type === '周') {
-      return '在周' + parts.map(p => weekDayNames[parseInt(p, 10)] || p).join('、')
-    }
-    return `在第 ${parts.join('、')} ${type}`
-  }
-
-  if (field.includes('-')) {
-    const [rangePart, stepPart] = field.split('/')
-    const [start, end] = rangePart.split('-')
-    let desc = ''
-    if (type === '周') {
-      desc = `从周${weekDayNames[parseInt(start, 10)] || start}到周${weekDayNames[parseInt(end, 10)] || end}`
-    } else {
-      desc = `从第 ${start} 到第 ${end} ${type}`
-    }
-    if (stepPart) {
-      desc += `，每隔 ${stepPart} ${type}`
-    }
-    return desc
-  }
-
-  // Single number
-  if (type === '周') {
-    const idx = parseInt(field, 10)
-    return '在周' + (weekDayNames[idx] || field)
-  }
-  return `在第 ${field} ${type}`
-}
-
-const description = computed(() => {
-  error.value = ''
-  const parts = cronExpression.value.trim().split(/\s+/)
-  if (parts.length !== 5) {
-    error.value = 'Cron 表达式必须包含 5 个字段（分 时 日 月 周）'
-    return ''
-  }
-
-  const [minute, hour, day, month, weekday] = parts
-
-  // Field ranges: minute(0-59), hour(0-23), day(1-31), month(1-12), weekday(0-6)
-  const ranges = [
-    { field: minute, min: 0, max: 59, name: '分钟' },
-    { field: hour, min: 0, max: 23, name: '小时' },
-    { field: day, min: 1, max: 31, name: '日' },
-    { field: month, min: 1, max: 12, name: '月' },
-    { field: weekday, min: 0, max: 6, name: '周' },
-  ]
-
-  for (const r of ranges) {
-    if (!validateField(r.field, r.min, r.max)) {
-      error.value = `字段 "${r.name}" 的值 "${r.field}" 无效（范围: ${r.min}-${r.max}）`
-      return ''
-    }
-  }
-
-  const descParts = []
-  const typeNames = ['分钟', '小时', '日', '月', '周']
-  parts.forEach((p, i) => {
-    if (p !== '*' || i >= 3) {
-      descParts.push(describeField(p, typeNames[i]))
-    }
-  })
-
-  if (descParts.length === 0) {
-    return '每分钟执行一次'
-  }
-
-  return descParts.join('，') + ' 执行'
-})
-
-/**
- * Expand a cron field into a set of matching values
- */
-const expandField = (field, min, max) => {
-  const result = new Set()
-
-  if (field === '*') {
-    for (let i = min; i <= max; i++) result.add(i)
-    return result
-  }
-
-  const parts = field.split(',')
-  for (const part of parts) {
-    if (part.startsWith('*/')) {
-      const step = parseInt(part.substring(2), 10)
-      for (let i = min; i <= max; i += step) result.add(i)
-    } else if (part.includes('-')) {
-      const [rangePart, stepPart] = part.split('/')
-      const [startStr, endStr] = rangePart.split('-')
-      const start = parseInt(startStr, 10)
-      const end = parseInt(endStr, 10)
-      const step = stepPart ? parseInt(stepPart, 10) : 1
-      for (let i = start; i <= end; i += step) result.add(i)
-    } else {
-      result.add(parseInt(part, 10))
-    }
-  }
-
-  return result
-}
-
-const nextExecutions = computed(() => {
-  if (error.value) return []
-  const parts = cronExpression.value.trim().split(/\s+/)
-  if (parts.length !== 5) return []
-
-  const results = []
-  const now = new Date()
-  // Start from the next minute, seconds and ms set to 0
-  const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0)
-
-  // Pre-expand all fields for efficiency
-  const minuteSet = expandField(parts[0], 0, 59)
-  const hourSet = expandField(parts[1], 0, 23)
-  const daySet = expandField(parts[2], 1, 31)
-  const monthSet = expandField(parts[3], 1, 12)
-  const weekdaySet = expandField(parts[4], 0, 6)
-
-  const maxMinutes = 366 * 24 * 60 // 366 days limit
-  let checked = 0
-
-  while (results.length < 5 && checked < maxMinutes) {
-    const m = candidate.getMinutes()
-    const h = candidate.getHours()
-    const d = candidate.getDate()
-    const mon = candidate.getMonth() + 1
-    const w = candidate.getDay()
-
-    if (minuteSet.has(m) && hourSet.has(h) && daySet.has(d) && monthSet.has(mon) && weekdaySet.has(w)) {
-      results.push(new Date(candidate))
-    }
-
-    candidate.setMinutes(candidate.getMinutes() + 1)
-    checked++
-  }
-
-  return results
-})
-
-const formatDate = (date) => {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
-
-const formatWeekday = (date) => {
-  return '周' + weekDayNames[date.getDay()]
-}
+const formatWeekday = (date) => `周${WEEKDAY_LABELS[date.getDay()]}`
 
 const applyPattern = (pattern) => {
   cronExpression.value = pattern.value
@@ -237,49 +43,49 @@ const applyPattern = (pattern) => {
   addHistory('Cron解析', `${pattern.label}: ${pattern.value}`)
 }
 
-const copyExpression = async () => {
-  try {
-    await navigator.clipboard.writeText(cronExpression.value)
-    showToast('已复制 Cron 表达式')
-    addHistory('Cron解析', cronExpression.value)
-  } catch {
-    showToast('复制失败', 'error')
-  }
-}
+const copyExpression = () =>
+  copyText(cronExpression.value.trim(), {
+    successMessage: '已复制 Cron 表达式',
+    history: 'Cron解析',
+  })
 
-const copyDescription = async () => {
-  if (!description.value) return
-  try {
-    await navigator.clipboard.writeText(description.value)
-    showToast('已复制描述')
-  } catch {
-    showToast('复制失败', 'error')
-  }
+const copyDescription = () => copyText(description.value, { successMessage: '已复制描述' })
+
+const copySchedule = () => {
+  if (!nextExecutions.value.length) return
+  const lines = nextExecutions.value.map(
+    (date, index) => `${index + 1}. ${formatDateTime(date)} ${formatWeekday(date)}`,
+  )
+  copyText(`${cronExpression.value.trim()}\n${description.value}\n\n${lines.join('\n')}`, {
+    successMessage: '已复制执行计划',
+  })
 }
 
 const clearInput = () => {
   cronExpression.value = '* * * * *'
-  error.value = ''
 }
 </script>
 
 <template>
   <div class="cron-parser">
-    <h2>Cron 表达式解析</h2>
-    <p class="description">解析 Cron 表达式，查看执行计划和下次执行时间</p>
+    <h2>⏱️ Cron 表达式解析</h2>
+    <p class="description">解析 5 字段 Cron 表达式，生成中文说明并预测接下来的执行时间（本地时区）</p>
 
     <div class="input-section">
       <div class="form-group">
-        <label>Cron 表达式（5字段）</label>
+        <label for="cron-input">Cron 表达式（分 时 日 月 周）</label>
         <div class="input-row">
           <input
+            id="cron-input"
             v-model="cronExpression"
             placeholder="* * * * *（分 时 日 月 周）"
             class="cron-input"
             spellcheck="false"
+            autocomplete="off"
+            :aria-invalid="Boolean(error)"
           />
-          <button @click="copyExpression" class="btn btn-primary" title="复制表达式">复制</button>
-          <button @click="clearInput" class="btn btn-secondary" title="重置">重置</button>
+          <button type="button" class="btn btn-primary" title="复制表达式" @click="copyExpression">复制</button>
+          <button type="button" class="btn btn-secondary" title="重置" @click="clearInput">重置</button>
         </div>
       </div>
     </div>
@@ -288,11 +94,12 @@ const clearInput = () => {
       <label>常用表达式</label>
       <div class="pattern-buttons">
         <button
-          v-for="pattern in quickPatterns"
+          v-for="pattern in CRON_PRESETS"
           :key="pattern.value"
-          @click="applyPattern(pattern)"
+          type="button"
           class="btn btn-pattern"
           :class="{ active: cronExpression.trim() === pattern.value }"
+          @click="applyPattern(pattern)"
         >
           {{ pattern.label }}
           <span class="pattern-value">{{ pattern.value }}</span>
@@ -300,7 +107,7 @@ const clearInput = () => {
       </div>
     </div>
 
-    <div v-if="error" class="error-message">{{ error }}</div>
+    <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
     <div v-if="cronFields.length === 5" class="fields-breakdown">
       <label>字段分解</label>
@@ -308,6 +115,7 @@ const clearInput = () => {
         <div v-for="(field, idx) in cronFields" :key="idx" class="field-card">
           <div class="field-value">{{ field.value }}</div>
           <div class="field-label">{{ field.label }}</div>
+          <div class="field-range">{{ field.range }}</div>
         </div>
       </div>
     </div>
@@ -315,26 +123,43 @@ const clearInput = () => {
     <div v-if="description" class="description-section">
       <div class="section-header">
         <label>执行说明</label>
-        <button @click="copyDescription" class="btn btn-small">复制</button>
+        <button type="button" class="btn btn-small" @click="copyDescription">复制</button>
       </div>
-      <div class="description-box">
-        {{ description }}
-      </div>
+      <div class="description-box">{{ description }}</div>
     </div>
 
     <div v-if="nextExecutions.length > 0" class="executions-section">
-      <label>接下来 5 次执行时间</label>
+      <div class="section-header">
+        <label>接下来 {{ nextExecutions.length }} 次执行时间</label>
+        <div class="section-actions">
+          <select v-model.number="runCount" class="count-select" aria-label="显示次数">
+            <option v-for="count in runCountOptions" :key="count" :value="count">{{ count }} 次</option>
+          </select>
+          <button type="button" class="btn btn-small" @click="copySchedule">复制计划</button>
+        </div>
+      </div>
       <div class="execution-list">
         <div v-for="(exec, idx) in nextExecutions" :key="idx" class="execution-item">
           <span class="exec-index">{{ idx + 1 }}</span>
-          <span class="exec-time">{{ formatDate(exec) }}</span>
+          <span class="exec-time">{{ formatDateTime(exec) }}</span>
+          <span class="exec-relative">{{ formatRelativeTime(exec) }}</span>
           <span class="exec-weekday">{{ formatWeekday(exec) }}</span>
         </div>
       </div>
     </div>
 
-    <div v-if="!error && nextExecutions.length === 0 && cronFields.length === 5" class="no-results">
-      在未来 366 天内未找到匹配的执行时间
+    <div v-if="!error && parsed.ok && nextExecutions.length === 0" class="no-results">
+      在未来 5 年内未找到匹配的执行时间（例如 2 月 31 日这类永不存在的日期）
+    </div>
+
+    <div class="syntax-help">
+      <label>语法速查</label>
+      <ul>
+        <li><code>*</code> 任意值，<code>?</code> 与 <code>*</code> 等价</li>
+        <li><code>1,3,5</code> 列表；<code>1-5</code> 范围；<code>*/15</code> 或 <code>5/15</code> 步进</li>
+        <li>月份可用 <code>JAN-DEC</code>，星期可用 <code>SUN-SAT</code>，<code>7</code> 等同于周日</li>
+        <li>日与周同时指定时，任一匹配即执行（与 Linux crontab 一致）</li>
+      </ul>
     </div>
   </div>
 </template>
@@ -344,17 +169,21 @@ const clearInput = () => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  --tool-accent: #e91e63;
+  --tool-accent-strong: #c2185b;
+  --tool-soft: rgba(233, 30, 99, 0.1);
+  --tool-border: rgba(233, 30, 99, 0.3);
 }
 
 h2 {
   margin: 0;
-  color: #e91e63;
+  color: var(--tool-accent);
   font-size: 1.8em;
 }
 
 .description {
   margin: 0;
-  color: #888;
+  color: var(--text-3);
   font-size: 0.95rem;
 }
 
@@ -374,10 +203,11 @@ h2 {
 .quick-patterns > label,
 .fields-breakdown > label,
 .description-section label,
-.executions-section > label {
+.executions-section label,
+.syntax-help > label {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #333;
+  color: var(--text);
 }
 
 .input-row {
@@ -389,21 +219,25 @@ h2 {
 .cron-input {
   flex: 1;
   padding: 0.75rem;
-  border: 2px solid #f8bbd0;
+  border: 2px solid var(--tool-border);
   border-radius: 8px;
   font-size: 1.1rem;
-  font-family: 'Courier New', monospace;
-  background-color: #fff0f5;
-  color: #333;
+  font-family: var(--font-mono);
+  background-color: var(--surface);
+  color: var(--text);
   letter-spacing: 0.05em;
   transition: border-color 0.3s;
+  min-width: 0;
 }
 
 .cron-input:focus {
   outline: none;
-  border-color: #e91e63;
-  background-color: white;
-  box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.1);
+  border-color: var(--tool-accent);
+  box-shadow: 0 0 0 3px var(--tool-soft);
+}
+
+.cron-input[aria-invalid='true'] {
+  border-color: #c33;
 }
 
 .btn {
@@ -418,35 +252,35 @@ h2 {
 }
 
 .btn-primary {
-  background-color: #e91e63;
+  background-color: var(--tool-accent);
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: #c2185b;
+  background-color: var(--tool-accent-strong);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);
 }
 
 .btn-secondary {
-  background-color: #f0f0f0;
-  color: #333;
+  background-color: var(--surface-3);
+  color: var(--text);
 }
 
 .btn-secondary:hover {
-  background-color: #e0e0e0;
+  background-color: var(--border);
 }
 
 .btn-small {
   padding: 0.3rem 0.8rem;
   font-size: 0.8rem;
-  background-color: #fce4ec;
-  color: #e91e63;
-  border: 1px solid #f8bbd0;
+  background-color: var(--tool-soft);
+  color: var(--tool-accent);
+  border: 1px solid var(--tool-border);
 }
 
 .btn-small:hover {
-  background-color: #f8bbd0;
+  background-color: var(--tool-border);
 }
 
 .quick-patterns {
@@ -467,9 +301,9 @@ h2 {
   align-items: center;
   gap: 0.25rem;
   padding: 0.6rem 1rem;
-  background-color: #fce4ec;
-  color: #c2185b;
-  border: 1px solid #f8bbd0;
+  background-color: var(--tool-soft);
+  color: var(--tool-accent-strong);
+  border: 1px solid var(--tool-border);
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 500;
@@ -477,16 +311,20 @@ h2 {
   transition: all 0.3s;
 }
 
+:global([data-theme='dark']) .btn-pattern {
+  color: #f48fb1;
+}
+
 .btn-pattern:hover {
-  background-color: #f8bbd0;
+  background-color: var(--tool-border);
   transform: translateY(-2px);
   box-shadow: 0 3px 8px rgba(233, 30, 99, 0.15);
 }
 
 .btn-pattern.active {
-  background-color: #e91e63;
+  background-color: var(--tool-accent);
   color: white;
-  border-color: #e91e63;
+  border-color: var(--tool-accent);
 }
 
 .btn-pattern.active .pattern-value {
@@ -494,17 +332,22 @@ h2 {
 }
 
 .pattern-value {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #999;
+  color: var(--text-3);
 }
 
 .error-message {
   padding: 0.75rem;
-  background-color: #fee;
+  background-color: var(--danger-soft);
   color: #c33;
   border-radius: 6px;
   border-left: 4px solid #c33;
+}
+
+:global([data-theme='dark']) .error-message {
+  color: #ff8a8a;
+  border-left-color: #ff8a8a;
 }
 
 .fields-breakdown {
@@ -523,10 +366,10 @@ h2 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
   padding: 1rem 0.5rem;
-  background: linear-gradient(135deg, #fce4ec, #fff0f5);
-  border: 1px solid #f8bbd0;
+  background: var(--tool-soft);
+  border: 1px solid var(--tool-border);
   border-radius: 10px;
   transition: transform 0.2s;
 }
@@ -536,46 +379,68 @@ h2 {
 }
 
 .field-value {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 1.3rem;
   font-weight: 700;
-  color: #e91e63;
+  color: var(--tool-accent);
   word-break: break-all;
   text-align: center;
 }
 
-.field-label {
-  font-size: 0.85rem;
-  color: #888;
-  font-weight: 500;
+:global([data-theme='dark']) .field-value {
+  color: #f48fb1;
 }
 
-.description-section {
+.field-label {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.field-range {
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
+
+.description-section,
+.executions-section,
+.syntax-help {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.count-select {
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--tool-border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
 }
 
 .description-box {
   padding: 1rem;
-  background: linear-gradient(135deg, #fce4ec, #fff0f5);
-  border: 2px solid #f8bbd0;
+  background: var(--tool-soft);
+  border: 2px solid var(--tool-border);
   border-radius: 8px;
   font-size: 1rem;
-  color: #333;
+  color: var(--text);
   line-height: 1.6;
-}
-
-.executions-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
 }
 
 .execution-list {
@@ -589,14 +454,15 @@ h2 {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, #fce4ec, #fff0f5);
-  border: 1px solid #f8bbd0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   transition: transform 0.2s;
 }
 
 .execution-item:hover {
   transform: translateX(4px);
+  border-color: var(--tool-border);
 }
 
 .exec-index {
@@ -605,7 +471,7 @@ h2 {
   justify-content: center;
   width: 28px;
   height: 28px;
-  background-color: #e91e63;
+  background-color: var(--tool-accent);
   color: white;
   border-radius: 50%;
   font-size: 0.85rem;
@@ -614,34 +480,56 @@ h2 {
 }
 
 .exec-time {
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 1rem;
-  color: #333;
+  color: var(--text);
   flex: 1;
+}
+
+.exec-relative {
+  font-size: 0.85rem;
+  color: var(--text-3);
 }
 
 .exec-weekday {
   font-size: 0.85rem;
-  color: #e91e63;
+  color: var(--tool-accent);
   font-weight: 500;
   padding: 0.2rem 0.6rem;
-  background-color: rgba(233, 30, 99, 0.08);
+  background-color: var(--tool-soft);
   border-radius: 4px;
+}
+
+:global([data-theme='dark']) .exec-weekday {
+  color: #f48fb1;
 }
 
 .no-results {
   padding: 1rem;
   text-align: center;
-  color: #999;
+  color: var(--text-3);
   font-size: 0.95rem;
-  background-color: #f9f9f9;
+  background-color: var(--surface-2);
   border-radius: 8px;
 }
 
-/* Responsive */
+.syntax-help ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.syntax-help code {
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-size: 0.85em;
+}
+
 @media (max-width: 768px) {
   .fields-grid {
-    grid-template-columns: repeat(5, 1fr);
     gap: 0.4rem;
   }
 
@@ -651,6 +539,10 @@ h2 {
 
   .field-value {
     font-size: 1rem;
+  }
+
+  .field-range {
+    display: none;
   }
 
   .input-row {
@@ -674,7 +566,6 @@ h2 {
 
 @media (max-width: 480px) {
   .fields-grid {
-    grid-template-columns: repeat(5, 1fr);
     gap: 0.3rem;
   }
 
@@ -687,123 +578,7 @@ h2 {
   }
 }
 
-/* Dark mode */
-:global([data-theme='dark'] .cron-parser h2) {
+:global([data-theme='dark']) h2 {
   color: #f48fb1;
-}
-
-:global([data-theme='dark'] .cron-parser .description) {
-  color: #a0a0a0;
-}
-
-:global([data-theme='dark'] .cron-parser .form-group label),
-:global([data-theme='dark'] .cron-parser .quick-patterns > label),
-:global([data-theme='dark'] .cron-parser .fields-breakdown > label),
-:global([data-theme='dark'] .cron-parser .description-section label),
-:global([data-theme='dark'] .cron-parser .executions-section > label) {
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .cron-parser .cron-input) {
-  background-color: #2a2a3e;
-  color: #e0e0e0;
-  border-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .cron-input:focus) {
-  background-color: #333;
-  border-color: #f48fb1;
-  box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.15);
-}
-
-:global([data-theme='dark'] .cron-parser .btn-secondary) {
-  background-color: #404050;
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-secondary:hover) {
-  background-color: #505060;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-small) {
-  background-color: #3e2a35;
-  color: #f48fb1;
-  border-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-small:hover) {
-  background-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-pattern) {
-  background-color: #3e2a35;
-  color: #f48fb1;
-  border-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-pattern:hover) {
-  background-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-pattern.active) {
-  background-color: #c2185b;
-  color: white;
-  border-color: #c2185b;
-}
-
-:global([data-theme='dark'] .cron-parser .btn-pattern.active .pattern-value) {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-:global([data-theme='dark'] .cron-parser .pattern-value) {
-  color: #777;
-}
-
-:global([data-theme='dark'] .cron-parser .error-message) {
-  background-color: #4a2a2a;
-  color: #ff6b6b;
-  border-left-color: #ff6b6b;
-}
-
-:global([data-theme='dark'] .cron-parser .field-card) {
-  background: linear-gradient(135deg, #3e2a35, #352a3e);
-  border-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .field-value) {
-  color: #f48fb1;
-}
-
-:global([data-theme='dark'] .cron-parser .field-label) {
-  color: #a0a0a0;
-}
-
-:global([data-theme='dark'] .cron-parser .description-box) {
-  background: linear-gradient(135deg, #3e2a35, #352a3e);
-  border-color: #5a2a3e;
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .cron-parser .execution-item) {
-  background: linear-gradient(135deg, #3e2a35, #352a3e);
-  border-color: #5a2a3e;
-}
-
-:global([data-theme='dark'] .cron-parser .exec-index) {
-  background-color: #c2185b;
-}
-
-:global([data-theme='dark'] .cron-parser .exec-time) {
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .cron-parser .exec-weekday) {
-  color: #f48fb1;
-  background-color: rgba(233, 30, 99, 0.15);
-}
-
-:global([data-theme='dark'] .cron-parser .no-results) {
-  background-color: #2a2a3e;
-  color: #888;
 }
 </style>

@@ -1,14 +1,38 @@
 <script setup>
-import { defineProps, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useConfig } from '../composables/useConfig'
 import { useTheme } from '../composables/useTheme'
+import { formatBytes } from '../utils/format'
+
+const APP_VERSION = __APP_VERSION__
 
 const props = defineProps({
   toolCount: { type: Number, default: 0 },
 })
 
-const { toggleTheme, isDark } = useTheme()
+const { setTheme, resetTheme, isDark, followsSystem } = useTheme()
 const { clearAllData, downloadConfig, getDataStats, importConfig } = useConfig()
+
+const themeOptions = [
+  { value: 'light', label: '☀️ 浅色' },
+  { value: 'dark', label: '🌙 深色' },
+  { value: 'system', label: '🖥️ 跟随系统' },
+]
+
+const themeMode = computed(() => {
+  if (followsSystem.value) return 'system'
+  return isDark.value ? 'dark' : 'light'
+})
+
+const themeSummary = computed(() => {
+  const current = isDark.value ? '深色模式' : '浅色模式'
+  return followsSystem.value ? `${current}（跟随系统）` : current
+})
+
+const chooseTheme = (mode) => {
+  if (mode === 'system') resetTheme()
+  else setTheme(mode)
+}
 
 const stats = ref({
   configSize: 0,
@@ -31,13 +55,7 @@ const refreshStats = () => {
   stats.value = getDataStats()
 }
 
-const formatSize = (bytes) => {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KB', 'MB']
-  const base = 1024
-  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(base)))
-  return `${Math.round((bytes / base ** index) * 100) / 100} ${units[index]}`
-}
+const formatSize = (bytes) => formatBytes(bytes)
 
 const getStoragePercent = () => {
   const maxStorageSize = 5 * 1024 * 1024
@@ -89,11 +107,21 @@ onMounted(() => {
       <div class="theme-setting">
         <div class="theme-info">
           <div class="theme-label">当前主题</div>
-          <div class="theme-value">{{ isDark ? '深色模式' : '浅色模式' }}</div>
+          <div class="theme-value">{{ themeSummary }}</div>
         </div>
-        <button class="btn btn-theme" @click="toggleTheme">
-          {{ isDark ? '切换为浅色' : '切换为深色' }}
-        </button>
+        <div class="theme-options" role="group" aria-label="主题选择">
+          <button
+            v-for="option in themeOptions"
+            :key="option.value"
+            type="button"
+            class="btn theme-option"
+            :class="{ active: themeMode === option.value }"
+            :aria-pressed="themeMode === option.value"
+            @click="chooseTheme(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -185,7 +213,7 @@ onMounted(() => {
         </div>
         <div class="about-item">
           <span class="label">版本：</span>
-          <span class="value">1.0.0</span>
+          <span class="value">{{ APP_VERSION }}</span>
         </div>
         <div class="about-item">
           <span class="label">工具数量：</span>
@@ -291,6 +319,25 @@ h2 {
 .btn-primary,
 .btn-theme {
   background: #4ecdc4;
+  color: #fff;
+}
+
+.theme-options {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.theme-option {
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: none;
+}
+
+.theme-option.active {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
   color: #fff;
 }
 

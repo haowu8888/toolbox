@@ -1,9 +1,11 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 import { parseQueryString, safeParseUrl, stringifyQuery } from '../utils/urlUtils'
 
+const { copyText } = useClipboard()
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
@@ -72,15 +74,8 @@ const convertJsonToQuery = () => {
   }
 }
 
-const copyToClipboard = async (text, historyType = '') => {
-  try {
-    await navigator.clipboard.writeText(String(text ?? ''))
-    showToast('已复制')
-    if (historyType) addHistory(historyType, String(text ?? ''))
-  } catch {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text, historyType = '') =>
+  copyText(text, { history: historyType || null })
 </script>
 
 <template>

@@ -1,14 +1,24 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useLocalStorage } from '../composables/useStorage'
+import { useHistory, useLocalStorage } from '../composables/useStorage'
 import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
+import { downloadJson, downloadText, timestampedFilename } from '../utils/download'
+import { formatRelativeTime } from '../utils/format'
+import { createId } from '../utils/random'
+import { STORAGE_KEYS } from '../utils/storageKeys'
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
-const storage = useLocalStorage('toolbox_notes', [])
+const { copyText } = useClipboard()
+const storage = useLocalStorage(STORAGE_KEYS.notes, [])
 
-const notes = ref(storage.getValue())
+const loadNotes = () => {
+  const value = storage.getValue()
+  return Array.isArray(value) ? value : []
+}
+
+const notes = ref(loadNotes())
 const newNoteTitle = ref('')
 const newNoteContent = ref('')
 const newNoteTags = ref([])
@@ -27,7 +37,7 @@ let confirmTimer = null
 const availableTags = ['工作', '学习', '生活', '重要', '待办']
 
 onMounted(() => {
-  notes.value = storage.getValue()
+  notes.value = loadNotes()
 })
 
 onUnmounted(() => {
@@ -61,7 +71,8 @@ const filteredNotes = computed(() => {
     )
   }
 
-  return filtered.sort((a, b) => {
+  // 复制后再排序，避免在 computed 里原地修改 notes 数组
+  return [...filtered].sort((a, b) => {
     // 按优先级排序：high > normal > low
     const priorityOrder = { high: 0, normal: 1, low: 2 }
     const pa = priorityOrder[a.priority || 'normal'] ?? 1
@@ -80,7 +91,7 @@ const addNote = () => {
   }
 
   const note = {
-    id: Date.now(),
+    id: createId('n-'),
     title: newNoteTitle.value,
     content: newNoteContent.value,
     isTodo: false,
@@ -107,7 +118,7 @@ const addTodo = () => {
   }
 
   const note = {
-    id: Date.now(),
+    id: createId('n-'),
     title: newNoteTitle.value,
     content: newNoteContent.value,
     isTodo: true,
@@ -201,38 +212,12 @@ const toggleEditTag = (tag) => {
   }
 }
 
-const formatDate = (date) => {
-  if (!date) return ''
-  if (typeof date === 'string' || typeof date === 'number') date = new Date(date)
-  if (!(date instanceof Date)) date = new Date(date)
-  if (Number.isNaN(date.getTime())) return ''
-  const now = new Date()
-  const diff = now - date
-
-  if (diff < 60000) {
-    return '刚刚'
-  } else if (diff < 3600000) {
-    return Math.floor(diff / 60000) + '分钟前'
-  } else if (diff < 86400000) {
-    return Math.floor(diff / 3600000) + '小时前'
-  } else if (diff < 604800000) {
-    return Math.floor(diff / 86400000) + '天前'
-  } else {
-    return date.toLocaleDateString('zh-CN')
-  }
-}
+const formatDate = (date) => formatRelativeTime(date)
 
 const showExportMenu = ref(false)
 
 const exportAsJson = () => {
-  const data = JSON.stringify(notes.value, null, 2)
-  const blob = new Blob([data], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'toolbox-notes.json'
-  link.click()
-  URL.revokeObjectURL(url)
+  downloadJson(notes.value, timestampedFilename('toolbox-notes', 'json'))
   showExportMenu.value = false
   showToast('已导出为 JSON')
 }
@@ -248,25 +233,12 @@ const exportAsMarkdown = () => {
     if (note.isTodo) md += `- 状态: ${note.completed ? '已完成' : '未完成'}\n`
     md += `\n${note.content}\n\n---\n\n`
   })
-  const blob = new Blob([md], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'toolbox-notes.md'
-  link.click()
-  URL.revokeObjectURL(url)
+  downloadText(md, timestampedFilename('toolbox-notes', 'md'), 'text/markdown;charset=utf-8')
   showExportMenu.value = false
   showToast('已导出为 Markdown')
 }
 
-const copyContent = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyContent = (text) => copyText(text)
 
 const clearAll = () => {
   confirmDeleteId.value = 'all'

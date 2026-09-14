@@ -2,8 +2,11 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useHistory, useFavorites } from '../composables/useStorage'
 import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
+import { formatRelativeTime, truncate } from '../utils/format'
 
 const { showToast } = useToast()
+const { copyText } = useClipboard()
 
 const activePanel = ref('history')
 const history = useHistory()
@@ -41,7 +44,7 @@ const filteredHistory = computed(() => {
   if (hSearch.value.trim()) {
     const q = hSearch.value.trim().toLowerCase()
     list = list.filter(i =>
-      i.type.toLowerCase().includes(q) ||
+      String(i.type || '').toLowerCase().includes(q) ||
       (i.value && i.value.toLowerCase().includes(q))
     )
   }
@@ -81,7 +84,7 @@ const filteredFavorites = computed(() => {
   if (fSearch.value.trim()) {
     const q = fSearch.value.trim().toLowerCase()
     list = list.filter(i =>
-      i.type.toLowerCase().includes(q) ||
+      String(i.type || '').toLowerCase().includes(q) ||
       (i.name && i.name.toLowerCase().includes(q)) ||
       (i.value && i.value.toLowerCase().includes(q))
     )
@@ -103,24 +106,9 @@ const setFavoritePage = (p) => {
 }
 
 // ---- 通用操作 ----
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text)
 
-const formatTime = (date) => {
-  if (typeof date === 'string') date = new Date(date)
-  const now = new Date()
-  const diff = now - date
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
-  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
-  return date.toLocaleDateString('zh-CN')
-}
+const formatTime = (date) => formatRelativeTime(date) || '未知时间'
 
 const requestConfirm = (id, action) => {
   const key = `${action}-${id}`
@@ -156,10 +144,7 @@ const toggleFavorite = (item) => {
   }
 }
 
-const truncateText = (text, length = 50) => {
-  if (!text) return ''
-  return text.length > length ? text.substring(0, length) + '...' : text
-}
+const truncateText = (text, length = 50) => truncate(text, length)
 
 const resetHistoryFilter = () => {
   hSearch.value = ''

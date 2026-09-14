@@ -1,85 +1,72 @@
 import { ref } from 'vue'
+import { createId } from '../utils/random'
+import { readStorageArray, readStorageJson, STORAGE_KEYS, writeStorageJson } from '../utils/storageKeys'
+
+const MAX_HISTORY = 200
+// 单条记录最长保留的字符数，防止超大 JSON 撑爆 localStorage 配额
+const MAX_VALUE_LENGTH = 5000
 
 /**
- * 本地存储工具
+ * 简单的 localStorage JSON 读写封装（不响应式）。
  */
-export const useLocalStorage = (key, defaultValue) => {
-  const getValue = () => {
-    try {
-      const item = localStorage.getItem(key)
-      return item ? JSON.parse(item) : defaultValue
-    } catch (err) {
-      console.error(`Error reading localStorage key "${key}":`, err)
-      return defaultValue
-    }
-  }
+export const useLocalStorage = (key, defaultValue) => ({
+  getValue: () => readStorageJson(key, defaultValue),
+  setValue: (value) => writeStorageJson(key, value),
+})
 
-  const setValue = (value) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value))
-    } catch (err) {
-      console.error(`Error setting localStorage key "${key}":`, err)
-    }
-  }
+const toRecordValue = (value) => (typeof value === 'string' ? value : JSON.stringify(value))
 
-  return { getValue, setValue }
+// 单例响应式状态，确保所有组件共享同一份数据
+let historyRef = null
+let favoritesRef = null
+
+const ensureHistory = () => {
+  if (!historyRef) historyRef = ref(readStorageArray(STORAGE_KEYS.history))
+  return historyRef
 }
 
-// 单例响应式状态，确保所有组件共享同一数据
-let _historyRef = null
-let _historyKey = 'toolbox_history'
-let _favoritesRef = null
-let _favoritesKey = 'toolbox_favorites'
-let _idCounter = 0
-
-function loadFromStorage(key, defaultValue) {
-  try {
-    const item = localStorage.getItem(key)
-    return item ? JSON.parse(item) : defaultValue
-  } catch {
-    return defaultValue
-  }
+const ensureFavorites = () => {
+  if (!favoritesRef) favoritesRef = ref(readStorageArray(STORAGE_KEYS.favorites))
+  return favoritesRef
 }
 
-function saveToStorage(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value))
-  } catch (err) {
-    console.error(`Error saving localStorage key "${key}":`, err)
-  }
-}
+const persistHistory = () => writeStorageJson(STORAGE_KEYS.history, historyRef.value)
+const persistFavorites = () => writeStorageJson(STORAGE_KEYS.favorites, favoritesRef.value)
 
 /**
  * 历史记录管理（响应式单例）
  */
-export const useHistory = (key = 'toolbox_history') => {
-  _historyKey = key
-  if (!_historyRef) {
-    _historyRef = ref(loadFromStorage(key, []))
-  }
+export const useHistory = () => {
+  const list = ensureHistory()
 
   const addHistory = (type, value) => {
+    const recordValue = toRecordValue(value).slice(0, MAX_VALUE_LENGTH)
+    const latest = list.value[0]
+    // 连续相同的记录只保留一条，避免同一输入反复写入
+    if (latest && latest.type === type && latest.value === recordValue) {
+      return latest
+    }
     const item = {
-      id: `${Date.now()}-${++_idCounter}`,
+      id: createId('h-'),
       type,
-      value: typeof value === 'string' ? value : JSON.stringify(value),
+      value: recordValue,
       timestamp: new Date().toISOString(),
     }
-    _historyRef.value = [item, ..._historyRef.value.slice(0, 199)]
-    saveToStorage(_historyKey, _historyRef.value)
+    list.value = [item, ...list.value.slice(0, MAX_HISTORY - 1)]
+    persistHistory()
     return item
   }
 
-  const getHistory = () => _historyRef.value
+  const getHistory = () => list.value
 
   const clearHistory = () => {
-    _historyRef.value = []
-    saveToStorage(_historyKey, [])
+    list.value = []
+    persistHistory()
   }
 
   const deleteHistoryItem = (id) => {
-    _historyRef.value = _historyRef.value.filter(item => item.id !== id)
-    saveToStorage(_historyKey, _historyRef.value)
+    list.value = list.value.filter((item) => item.id !== id)
+    persistHistory()
   }
 
   return {
@@ -87,47 +74,43 @@ export const useHistory = (key = 'toolbox_history') => {
     getHistory,
     clearHistory,
     deleteHistoryItem,
-    historyList: _historyRef,
+    historyList: list,
   }
 }
 
 /**
  * 收藏夹管理（响应式单例）
  */
-export const useFavorites = (key = 'toolbox_favorites') => {
-  _favoritesKey = key
-  if (!_favoritesRef) {
-    _favoritesRef = ref(loadFromStorage(key, []))
-  }
+export const useFavorites = () => {
+  const list = ensureFavorites()
 
   const addFavorite = (type, value, name = '') => {
+    const recordValue = toRecordValue(value)
     const item = {
-      id: `${Date.now()}-${++_idCounter}`,
+      id: createId('f-'),
       type,
-      value: typeof value === 'string' ? value : JSON.stringify(value),
-      name: name || (typeof value === 'string' ? value.substring(0, 30) : ''),
+      value: recordValue,
+      name: name || recordValue.substring(0, 30),
       createdAt: new Date().toISOString(),
     }
-    _favoritesRef.value = [..._favoritesRef.value, item]
-    saveToStorage(_favoritesKey, _favoritesRef.value)
+    list.value = [...list.value, item]
+    persistFavorites()
     return item
   }
 
-  const getFavorites = () => _favoritesRef.value
+  const getFavorites = () => list.value
 
   const removeFavorite = (id) => {
-    _favoritesRef.value = _favoritesRef.value.filter(item => item.id !== id)
-    saveToStorage(_favoritesKey, _favoritesRef.value)
+    list.value = list.value.filter((item) => item.id !== id)
+    persistFavorites()
   }
 
   const clearFavorites = () => {
-    _favoritesRef.value = []
-    saveToStorage(_favoritesKey, [])
+    list.value = []
+    persistFavorites()
   }
 
-  const isFavorite = (value) => {
-    return _favoritesRef.value.some(item => item.value === value)
-  }
+  const isFavorite = (value) => list.value.some((item) => item.value === value)
 
   return {
     addFavorite,
@@ -135,6 +118,6 @@ export const useFavorites = (key = 'toolbox_favorites') => {
     removeFavorite,
     clearFavorites,
     isFavorite,
-    favoriteList: _favoritesRef,
+    favoriteList: list,
   }
 }

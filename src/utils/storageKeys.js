@@ -40,3 +40,52 @@ export const defaultAppState = () => ({
   lotteryTemplates: [],
   lotteryRecords: [],
 })
+
+/* ---------- 安全的 localStorage 读写（隐私模式 / 配额溢出 / 损坏数据都不会抛错） ---------- */
+
+const hasStorage = () => {
+  try {
+    return typeof localStorage !== 'undefined'
+  } catch {
+    return false
+  }
+}
+
+export const readStorageRaw = (key, fallback = null) => {
+  if (!hasStorage()) return fallback
+  try {
+    const value = localStorage.getItem(key)
+    return value ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+export const readStorageJson = (key, fallback) => safeParseJson(readStorageRaw(key), fallback)
+
+export const readStorageArray = (key) => {
+  const value = readStorageJson(key, [])
+  return Array.isArray(value) ? value : []
+}
+
+export const writeStorageRaw = (key, value) => {
+  if (!hasStorage()) return false
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch (err) {
+    console.error(`Error saving localStorage key "${key}":`, err)
+    return false
+  }
+}
+
+export const writeStorageJson = (key, value) => writeStorageRaw(key, JSON.stringify(value))
+
+export const removeStorageKey = (key) => {
+  if (!hasStorage()) return
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // ignore
+  }
+}

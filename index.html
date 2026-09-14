@@ -2,19 +2,31 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>工具箱 - 开发者在线工具集</title>
-    <meta name="description" content="免费在线开发者工具箱，包含二维码生成、JSON格式化、文本加密、编码转换、正则表达式、Markdown预览、时间转换、颜色工具等26+实用工具。无需注册，隐私优先，数据本地处理。" />
-    <meta name="keywords" content="开发者工具,在线工具箱,JSON格式化,二维码生成,文本加密,编码转换,正则表达式,Markdown,CSS单位转换,JWT解码" />
-    <meta name="theme-color" content="#4ecdc4" />
+    <meta name="description" content="免费在线开发者工具箱：二维码生成、JSON 格式化、文本加密、编码转换、正则表达式、Markdown 预览、时间转换、颜色工具、金属行情等 30+ 实用工具。无需注册，隐私优先，数据只保存在本地浏览器。" />
+    <meta name="keywords" content="开发者工具,在线工具箱,JSON格式化,二维码生成,文本加密,编码转换,正则表达式,Markdown,CSS单位转换,JWT解码,Cron解析,文本对比" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#4ecdc4" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1a2e" />
+    <meta name="application-name" content="工具箱" />
+    <meta name="apple-mobile-web-app-title" content="工具箱" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta property="og:title" content="工具箱 - 开发者在线工具集" />
-    <meta property="og:description" content="免费在线开发者工具箱，26+实用工具，无需注册，隐私优先。" />
+    <meta property="og:description" content="免费在线开发者工具箱，30+ 实用工具，无需注册，隐私优先，支持离线使用。" />
     <meta property="og:type" content="website" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta property="og:image" content="/pwa-512x512.png" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- 首屏即应用主题，避免深色模式闪白；外置文件以兼容 CSP script-src 'self' -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="app"></div>
+    <noscript>工具箱需要启用 JavaScript 才能运行。</noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

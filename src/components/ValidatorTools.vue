@@ -1,10 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
 
-const { showToast } = useToast()
-const { addHistory } = useHistory()
+const { copyText } = useClipboard()
 
 const inputValue = ref('')
 const validationType = ref('email')
@@ -59,17 +57,15 @@ const validate = () => {
   }
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-    if (validationResult.value) {
-      addHistory('数据验证', `${validationResult.value.type}: ${text} → ${validationResult.value.isValid ? '通过' : '不通过'}`)
-    }
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) =>
+  copyText(text, {
+    history: validationResult.value
+      ? [
+          '数据验证',
+          `${validationResult.value.type}: ${text} → ${validationResult.value.isValid ? '通过' : '不通过'}`,
+        ]
+      : null,
+  })
 
 const clearAll = () => {
   inputValue.value = ''

@@ -1,23 +1,17 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
+import { randomString, uuidV4 } from '../utils/random'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 const { addHistory } = useHistory()
 
 const inputText = ref('')
 const operation = ref('uuid')
 
-// UUID 生成
-const generateUUID = () => {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  bytes[6] = (bytes[6] & 0x0f) | 0x40 // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80 // variant 10
-  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`
-}
+// UUID 生成（RFC 4122 v4，基于 Web Crypto）
+const generateUUID = () => uuidV4()
 
 // 生成多个 UUID
 const uuidCount = ref(1)
@@ -46,13 +40,9 @@ const generatePassword = () => {
   if (includeNumbers.value) chars += '0123456789'
   if (includeSpecial.value) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?'
 
-  let password = ''
-  const randomValues = new Uint32Array(passwordLength.value)
-  crypto.getRandomValues(randomValues)
-  for (let i = 0; i < passwordLength.value; i++) {
-    password += chars.charAt(randomValues[i] % chars.length)
-  }
-  return password
+  if (!chars) return ''
+  // 拒绝采样避免取模偏差，密码字符分布更均匀
+  return randomString(Math.max(1, Number(passwordLength.value) || 16), chars)
 }
 
 // 存储生成的密码
@@ -136,20 +126,9 @@ const executeOperation = () => {
   if (output.value) addHistory('文本处理', output.value)
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text)
 
-const copyAllUUIDs = async () => {
-  const text = uuidList.value.join('\n')
-  await copyToClipboard(text)
-  addHistory('UUID 生成', text)
-}
+const copyAllUUIDs = () => copyText(uuidList.value.join('\n'), { history: 'UUID 生成' })
 
 const clearAll = () => {
   inputText.value = ''

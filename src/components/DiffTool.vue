@@ -1,131 +1,171 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { useToast } from '../composables/useToast'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
+import { useToast } from '../composables/useToast'
+import { downloadText } from '../utils/download'
+import {
+  buildSideBySideRows,
+  diffInline,
+  diffLines,
+  formatSimpleDiff,
+  formatUnifiedDiff,
+} from '../utils/diff'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 const { addHistory } = useHistory()
+const { showToast } = useToast()
+
+const MAX_LINES = 20000
+const INLINE_HIGHLIGHT_LIMIT = 400
 
 const originalText = ref('')
 const modifiedText = ref('')
 const ignoreWhitespace = ref(false)
-const diffResult = ref([])
+const ignoreCase = ref(false)
+const viewMode = ref('unified') // unified | split
+const onlyChanges = ref(false)
+// 结果可能有上万行，用 shallowRef 避免为每一行创建响应式代理
+const result = shallowRef(null)
 const hasCompared = ref(false)
 
-function lcs(a, b) {
-  const m = a.length, n = b.length
-  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1])
-  // backtrack to build diff
-  let i = m, j = n
-  const result = []
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
-      result.unshift({ type: 'unchanged', text: a[i - 1] })
-      i--; j--
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      result.unshift({ type: 'added', text: b[j - 1] })
-      j--
-    } else {
-      result.unshift({ type: 'deleted', text: a[i - 1] })
-      i--
-    }
-  }
-  return result
-}
+const stats = computed(() => result.value?.stats ?? { added: 0, deleted: 0, unchanged: 0, changed: 0 })
+const entries = computed(() => result.value?.entries ?? [])
+const isIdentical = computed(() => hasCompared.value && stats.value.changed === 0)
 
-const stats = computed(() => {
-  const added = diffResult.value.filter(d => d.type === 'added').length
-  const deleted = diffResult.value.filter(d => d.type === 'deleted').length
-  const unchanged = diffResult.value.filter(d => d.type === 'unchanged').length
-  return { added, deleted, unchanged }
+const visibleEntries = computed(() =>
+  onlyChanges.value ? entries.value.filter((entry) => entry.type !== 'equal') : entries.value,
+)
+
+const sideBySideRows = computed(() => {
+  const rows = buildSideBySideRows(entries.value)
+  return onlyChanges.value ? rows.filter((row) => row.kind !== 'equal') : rows
 })
 
-const MAX_LINES = 5000
+// 行内高亮：修改行成对时按字符对比，只对前 N 行做，避免大文件卡顿
+const inlineCache = computed(() => {
+  const cache = new Map()
+  let count = 0
+  for (const row of buildSideBySideRows(entries.value)) {
+    if (row.kind !== 'modify') continue
+    if (count++ >= INLINE_HIGHLIGHT_LIMIT) break
+    const { oldSegments, newSegments } = diffInline(row.left.text, row.right.text)
+    cache.set(row.left, oldSegments)
+    cache.set(row.right, newSegments)
+  }
+  return cache
+})
+
+const segmentsFor = (entry) => inlineCache.value.get(entry) ?? [{ text: entry.text, changed: false }]
 
 const compare = () => {
-  let origLines = originalText.value.split('\n')
-  let modLines = modifiedText.value.split('\n')
-
-  if (origLines.length > MAX_LINES || modLines.length > MAX_LINES) {
+  const oldCount = originalText.value.split('\n').length
+  const newCount = modifiedText.value.split('\n').length
+  if (oldCount > MAX_LINES || newCount > MAX_LINES) {
     showToast(`文本过长（最大 ${MAX_LINES} 行），请缩减后重试`, 'error')
     return
   }
 
-  if (ignoreWhitespace.value) {
-    origLines = origLines.map(line => line.replace(/\s+/g, ' ').trim())
-    modLines = modLines.map(line => line.replace(/\s+/g, ' ').trim())
-  }
-
-  diffResult.value = lcs(origLines, modLines)
+  result.value = diffLines(originalText.value, modifiedText.value, {
+    ignoreWhitespace: ignoreWhitespace.value,
+    ignoreCase: ignoreCase.value,
+  })
   hasCompared.value = true
-  addHistory('文本对比', `原始: ${origLines.length}行, 修改: ${modLines.length}行`)
+  addHistory('文本对比', `原始 ${result.value.oldLineCount} 行 / 修改 ${result.value.newLineCount} 行，变更 ${result.value.stats.changed} 行`)
 }
 
-const diffText = computed(() => {
-  return diffResult.value.map(d => {
-    if (d.type === 'added') return '+ ' + d.text
-    if (d.type === 'deleted') return '- ' + d.text
-    return '  ' + d.text
-  }).join('\n')
+// 选项变化后自动重新对比，保持结果与设置一致
+watch([ignoreWhitespace, ignoreCase], () => {
+  if (hasCompared.value) compare()
 })
 
-const copyDiff = async () => {
-  if (!diffResult.value.length) {
-    showToast('没有对比结果可复制', 'error')
+const copyDiff = () => {
+  if (!entries.value.length) {
+    showToast('没有对比结果可复制', 'info')
     return
   }
-  try {
-    await navigator.clipboard.writeText(diffText.value)
-    showToast('已复制对比结果')
-  } catch (err) {
-    showToast('复制失败', 'error')
+  copyText(formatSimpleDiff(entries.value), { successMessage: '已复制对比结果' })
+}
+
+const copyUnified = () => {
+  if (!entries.value.length) {
+    showToast('没有对比结果可复制', 'info')
+    return
   }
+  const text = formatUnifiedDiff(entries.value, { oldName: 'original.txt', newName: 'modified.txt' })
+  copyText(text || '（两段文本完全相同）', { successMessage: '已复制 unified diff' })
+}
+
+const downloadPatch = () => {
+  const text = formatUnifiedDiff(entries.value, { oldName: 'original.txt', newName: 'modified.txt' })
+  if (!text) {
+    showToast('两段文本完全相同，无需生成补丁', 'info')
+    return
+  }
+  downloadText(text, 'diff.patch', 'text/x-patch;charset=utf-8')
+  showToast('补丁文件已下载')
+}
+
+const swapTexts = () => {
+  const temp = originalText.value
+  originalText.value = modifiedText.value
+  modifiedText.value = temp
+  if (hasCompared.value) compare()
 }
 
 const clearAll = () => {
   originalText.value = ''
   modifiedText.value = ''
-  diffResult.value = []
+  result.value = null
   hasCompared.value = false
 }
+
+const prefixFor = (type) => (type === 'insert' ? '+' : type === 'delete' ? '-' : ' ')
 </script>
 
 <template>
   <div class="diff-tool">
     <h2>📄 文本对比工具</h2>
-    <p class="description">对比两段文本的差异，基于 LCS 算法逐行比较</p>
+    <p class="description">逐行对比两段文本，支持忽略空白与大小写、并排视图、行内高亮与 unified diff 导出</p>
 
     <div class="editor-area">
       <div class="editor-pane">
-        <label class="pane-label">原始文本</label>
+        <label class="pane-label" for="diff-original">原始文本</label>
         <textarea
+          id="diff-original"
           v-model="originalText"
           placeholder="在此输入原始文本..."
           class="input-textarea"
+          spellcheck="false"
         ></textarea>
       </div>
       <div class="editor-pane">
-        <label class="pane-label">修改后文本</label>
+        <label class="pane-label" for="diff-modified">修改后文本</label>
         <textarea
+          id="diff-modified"
           v-model="modifiedText"
           placeholder="在此输入修改后的文本..."
           class="input-textarea"
+          spellcheck="false"
         ></textarea>
       </div>
     </div>
 
     <div class="controls">
-      <label class="checkbox-label">
-        <input v-model="ignoreWhitespace" type="checkbox" />
-        忽略空白字符
-      </label>
+      <div class="option-group">
+        <label class="checkbox-label">
+          <input v-model="ignoreWhitespace" type="checkbox" />
+          忽略空白字符
+        </label>
+        <label class="checkbox-label">
+          <input v-model="ignoreCase" type="checkbox" />
+          忽略大小写
+        </label>
+      </div>
       <div class="button-group">
-        <button @click="compare" class="btn btn-primary">对比</button>
-        <button @click="copyDiff" class="btn btn-secondary">📋 复制结果</button>
-        <button @click="clearAll" class="btn btn-secondary">清空</button>
+        <button type="button" class="btn btn-primary" @click="compare">对比</button>
+        <button type="button" class="btn btn-secondary" title="交换两侧文本" @click="swapTexts">⇄ 交换</button>
+        <button type="button" class="btn btn-secondary" @click="clearAll">清空</button>
       </div>
     </div>
 
@@ -145,16 +185,82 @@ const clearAll = () => {
         </div>
       </div>
 
-      <div class="diff-output">
-        <div
-          v-for="(line, index) in diffResult"
-          :key="index"
-          :class="['diff-line', 'diff-' + line.type]"
-        >
-          <span class="line-prefix">{{ line.type === 'added' ? '+' : line.type === 'deleted' ? '-' : ' ' }}</span>
-          <span class="line-text">{{ line.text }}</span>
+      <div class="result-toolbar">
+        <div class="view-switch" role="group" aria-label="视图模式">
+          <button
+            type="button"
+            :class="['view-btn', { active: viewMode === 'unified' }]"
+            :aria-pressed="viewMode === 'unified'"
+            @click="viewMode = 'unified'"
+          >
+            统一视图
+          </button>
+          <button
+            type="button"
+            :class="['view-btn', { active: viewMode === 'split' }]"
+            :aria-pressed="viewMode === 'split'"
+            @click="viewMode = 'split'"
+          >
+            并排视图
+          </button>
+          <label class="checkbox-label compact">
+            <input v-model="onlyChanges" type="checkbox" />
+            仅显示变更
+          </label>
         </div>
-        <div v-if="diffResult.length === 0" class="no-diff">两段文本完全相同，没有差异。</div>
+        <div class="button-group">
+          <button type="button" class="btn btn-secondary" @click="copyDiff">📋 复制结果</button>
+          <button type="button" class="btn btn-secondary" @click="copyUnified">📋 复制 unified</button>
+          <button type="button" class="btn btn-secondary" @click="downloadPatch">⬇️ 下载 .patch</button>
+        </div>
+      </div>
+
+      <div v-if="isIdentical" class="no-diff">两段文本完全相同，没有差异。</div>
+
+      <div v-else-if="viewMode === 'unified'" class="diff-output" role="table" aria-label="对比结果">
+        <div
+          v-for="(line, index) in visibleEntries"
+          :key="index"
+          :class="['diff-line', `diff-${line.type}`]"
+          role="row"
+        >
+          <span class="line-no" role="cell">{{ line.oldLine ?? '' }}</span>
+          <span class="line-no" role="cell">{{ line.newLine ?? '' }}</span>
+          <span class="line-prefix" role="cell" aria-hidden="true">{{ prefixFor(line.type) }}</span>
+          <span class="line-text" role="cell">
+            <template v-if="line.type === 'equal'">{{ line.text }}</template>
+            <template v-else>
+              <span v-for="(seg, i) in segmentsFor(line)" :key="i" :class="{ 'inline-hit': seg.changed }">{{ seg.text }}</span>
+            </template>
+          </span>
+        </div>
+        <div v-if="visibleEntries.length === 0" class="no-diff">没有可显示的行。</div>
+      </div>
+
+      <div v-else class="split-output" role="table" aria-label="并排对比结果">
+        <div class="split-header" role="row">
+          <span role="columnheader">原始文本</span>
+          <span role="columnheader">修改后文本</span>
+        </div>
+        <div v-for="(row, index) in sideBySideRows" :key="index" :class="['split-row', `split-${row.kind}`]" role="row">
+          <div :class="['split-cell', row.left ? `cell-${row.left.type}` : 'cell-empty']" role="cell">
+            <span class="line-no">{{ row.left?.oldLine ?? '' }}</span>
+            <span class="line-text">
+              <template v-if="row.left">
+                <span v-for="(seg, i) in segmentsFor(row.left)" :key="i" :class="{ 'inline-hit': seg.changed }">{{ seg.text }}</span>
+              </template>
+            </span>
+          </div>
+          <div :class="['split-cell', row.right ? `cell-${row.right.type}` : 'cell-empty']" role="cell">
+            <span class="line-no">{{ row.right?.newLine ?? '' }}</span>
+            <span class="line-text">
+              <template v-if="row.right">
+                <span v-for="(seg, i) in segmentsFor(row.right)" :key="i" :class="{ 'inline-hit': seg.changed }">{{ seg.text }}</span>
+              </template>
+            </span>
+          </div>
+        </div>
+        <div v-if="sideBySideRows.length === 0" class="no-diff">没有可显示的行。</div>
       </div>
     </div>
   </div>
@@ -165,17 +271,18 @@ const clearAll = () => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  --tool-accent: #00bcd4;
 }
 
 h2 {
   margin: 0;
-  color: #00bcd4;
+  color: var(--tool-accent);
   font-size: 1.8em;
 }
 
 .description {
   margin: 0;
-  color: #888;
+  color: var(--text-3);
   font-size: 0.95rem;
 }
 
@@ -193,47 +300,47 @@ h2 {
 
 .pane-label {
   font-weight: 600;
-  color: #333;
+  color: var(--text);
   font-size: 0.95rem;
-}
-
-:global([data-theme='dark'] .pane-label) {
-  color: #e0e0e0;
 }
 
 .input-textarea {
   width: 100%;
   min-height: 200px;
   padding: 0.75rem;
-  border: 2px solid #b2ebf2;
+  border: 2px solid var(--border);
   border-radius: 8px;
-  font-family: 'Courier New', monospace;
-  font-size: 0.95rem;
-  background-color: white;
-  color: #333;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  background-color: var(--surface);
+  color: var(--text);
   resize: vertical;
   transition: border-color 0.3s;
   box-sizing: border-box;
-}
-
-:global([data-theme='dark'] .input-textarea) {
-  background-color: #1a1a2a;
-  border-color: #1a3a4a;
-  color: #e0e0e0;
+  tab-size: 4;
 }
 
 .input-textarea:focus {
   outline: none;
-  border-color: #00bcd4;
-  box-shadow: 0 0 0 3px rgba(0, 188, 212, 0.1);
+  border-color: var(--tool-accent);
+  box-shadow: 0 0 0 3px rgba(0, 188, 212, 0.12);
 }
 
-.controls {
+.controls,
+.result-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 1rem;
+}
+
+.option-group,
+.view-switch {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .checkbox-label {
@@ -242,23 +349,23 @@ h2 {
   gap: 0.5rem;
   cursor: pointer;
   font-weight: 500;
-  color: #333;
+  color: var(--text);
 }
 
-:global([data-theme='dark'] .checkbox-label) {
-  color: #a0c0e0;
+.checkbox-label.compact {
+  font-size: 0.9rem;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   cursor: pointer;
-  accent-color: #00bcd4;
+  accent-color: var(--tool-accent);
   width: 18px;
   height: 18px;
 }
 
 .button-group {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
 }
 
@@ -273,8 +380,8 @@ h2 {
 }
 
 .btn-primary {
-  background-color: #00bcd4;
-  color: white;
+  background-color: var(--tool-accent);
+  color: #fff;
 }
 
 .btn-primary:hover {
@@ -284,27 +391,34 @@ h2 {
 }
 
 .btn-secondary {
-  background-color: #f0f0f0;
-  color: #333;
-}
-
-:global([data-theme='dark'] .btn-secondary) {
-  background-color: #2a2a2a;
-  color: #e0e0e0;
+  background-color: var(--surface-3);
+  color: var(--text);
 }
 
 .btn-secondary:hover {
-  background-color: #e0e0e0;
+  background-color: var(--border);
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
-  background-color: #3a3a3a;
+.view-btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+
+.view-btn.active {
+  background: var(--tool-accent);
+  border-color: var(--tool-accent);
+  color: #fff;
 }
 
 .result-section {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .stats-grid {
@@ -315,49 +429,31 @@ h2 {
 
 .stat-box {
   border-radius: 10px;
-  padding: 1.25rem;
+  padding: 1.1rem;
   text-align: center;
   border: 2px solid transparent;
+  background: var(--surface-2);
 }
 
 .stat-added {
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
   border-color: #4caf50;
-}
-
-:global([data-theme='dark'] .stat-added) {
-  background: linear-gradient(135deg, #1a2e1a, #2a3e2a);
-  border-color: #4caf50;
+  background: var(--success-soft);
 }
 
 .stat-deleted {
-  background: linear-gradient(135deg, #ffebee, #ffcdd2);
   border-color: #f44336;
-}
-
-:global([data-theme='dark'] .stat-deleted) {
-  background: linear-gradient(135deg, #2e1a1a, #3e2a2a);
-  border-color: #f44336;
+  background: var(--danger-soft);
 }
 
 .stat-unchanged {
-  background: linear-gradient(135deg, #e0f7fa, #b2ebf2);
-  border-color: #00bcd4;
-}
-
-:global([data-theme='dark'] .stat-unchanged) {
-  background: linear-gradient(135deg, #1a2a2e, #2a3a3e);
-  border-color: #00bcd4;
+  border-color: var(--tool-accent);
+  background: var(--info-soft);
 }
 
 .stat-label {
   font-size: 0.9rem;
-  color: #666;
-  margin-bottom: 0.5rem;
-}
-
-:global([data-theme='dark'] .stat-label) {
-  color: #a0c0e0;
+  color: var(--text-2);
+  margin-bottom: 0.4rem;
 }
 
 .stat-value {
@@ -374,97 +470,179 @@ h2 {
 }
 
 .stat-unchanged .stat-value {
-  color: #00bcd4;
+  color: var(--tool-accent);
 }
 
-.diff-output {
-  background: #fafafa;
-  border: 2px solid #b2ebf2;
+.diff-output,
+.split-output {
+  background: var(--surface-2);
+  border: 2px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
-}
-
-:global([data-theme='dark'] .diff-output) {
-  background: #1a1a2a;
-  border-color: #1a3a4a;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  max-height: 70vh;
 }
 
 .diff-line {
   display: flex;
-  padding: 0.3rem 0.75rem;
-  border-bottom: 1px solid #eee;
-  min-height: 1.6em;
-  align-items: center;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  min-height: 1.7em;
+  line-height: 1.7;
 }
 
-:global([data-theme='dark'] .diff-line) {
-  border-bottom-color: #2a2a3a;
+.line-no {
+  flex: 0 0 3.5em;
+  padding: 0 0.4rem;
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 0.8em;
 }
 
-.diff-added {
-  background-color: #e8f5e9;
-  color: #2e7d32;
-}
-
-:global([data-theme='dark'] .diff-added) {
-  background-color: #1a2e1a;
-  color: #81c784;
-}
-
-.diff-deleted {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-:global([data-theme='dark'] .diff-deleted) {
-  background-color: #2e1a1a;
-  color: #ef9a9a;
-}
-
-.diff-unchanged {
-  color: #333;
-}
-
-:global([data-theme='dark'] .diff-unchanged) {
-  color: #ccc;
+:global([data-theme='dark']) .line-no {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .line-prefix {
-  display: inline-block;
-  width: 1.5em;
+  flex: 0 0 1.5em;
+  text-align: center;
   font-weight: 700;
-  flex-shrink: 0;
   user-select: none;
 }
 
 .line-text {
+  flex: 1;
+  padding-right: 0.75rem;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.diff-insert {
+  background-color: rgba(76, 175, 80, 0.14);
+  color: #2e7d32;
+}
+
+.diff-delete {
+  background-color: rgba(244, 67, 54, 0.14);
+  color: #c62828;
+}
+
+.diff-equal {
+  color: var(--text);
+}
+
+:global([data-theme='dark']) .diff-insert {
+  color: #81c784;
+}
+
+:global([data-theme='dark']) .diff-delete {
+  color: #ef9a9a;
+}
+
+.inline-hit {
+  border-radius: 3px;
+  background: rgba(255, 193, 7, 0.45);
+}
+
+.diff-delete .inline-hit,
+.cell-delete .inline-hit {
+  background: rgba(244, 67, 54, 0.35);
+}
+
+.diff-insert .inline-hit,
+.cell-insert .inline-hit {
+  background: rgba(76, 175, 80, 0.35);
+}
+
+/* 并排视图 */
+.split-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  z-index: 1;
+}
+
+.split-header span {
+  padding: 0.5rem 0.75rem;
+}
+
+.split-header span + span {
+  border-left: 1px solid var(--border);
+}
+
+.split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--border);
+}
+
+.split-cell {
+  display: flex;
+  align-items: flex-start;
+  min-height: 1.7em;
+  line-height: 1.7;
+  min-width: 0;
+}
+
+.split-cell + .split-cell {
+  border-left: 1px solid var(--border);
+}
+
+.cell-delete {
+  background-color: rgba(244, 67, 54, 0.14);
+  color: #c62828;
+}
+
+.cell-insert {
+  background-color: rgba(76, 175, 80, 0.14);
+  color: #2e7d32;
+}
+
+:global([data-theme='dark']) .cell-delete {
+  color: #ef9a9a;
+}
+
+:global([data-theme='dark']) .cell-insert {
+  color: #81c784;
+}
+
+.cell-empty {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    rgba(0, 0, 0, 0.03) 6px,
+    rgba(0, 0, 0, 0.03) 12px
+  );
 }
 
 .no-diff {
   padding: 2rem;
   text-align: center;
-  color: #888;
+  color: var(--text-3);
   font-family: inherit;
-}
-
-:global([data-theme='dark'] .no-diff) {
-  color: #a0c0e0;
+  background: var(--surface-2);
+  border-radius: 8px;
 }
 
 @media (max-width: 768px) {
-  .editor-area {
-    grid-template-columns: 1fr;
-  }
-
+  .editor-area,
   .stats-grid {
     grid-template-columns: 1fr;
   }
 
-  .controls {
+  .controls,
+  .result-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
@@ -472,14 +650,19 @@ h2 {
   .button-group {
     justify-content: center;
   }
+
+  .split-row,
+  .split-header {
+    grid-template-columns: 1fr;
+  }
+
+  .split-cell + .split-cell {
+    border-left: none;
+    border-top: 1px dashed var(--border);
+  }
 }
 
-/* Dark mode overrides */
-:global([data-theme='dark'] h2) {
+:global([data-theme='dark']) h2 {
   color: #4dd0e1;
-}
-
-:global([data-theme='dark'] .description) {
-  color: #a0c0e0;
 }
 </style>

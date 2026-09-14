@@ -1,4 +1,16 @@
 node_modules
 dist
 .git
+.github
+.claude
+.vscode
+docs
+e2e
+test-results
+playwright-report
 *.md
+*.log
+tmp-*
+server.ts
+docker-compose.yml
+Dockerfile

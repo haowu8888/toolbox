@@ -5,7 +5,7 @@ import globals from 'globals'
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'dev-dist/**', 'test-results/**', 'playwright-report/**'],
   },
   js.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
@@ -17,6 +17,7 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.node,
+        __APP_VERSION__: 'readonly',
       },
     },
     rules: {
@@ -32,7 +33,8 @@ export default [
       'no-useless-escape': 'warn',
       'vue/attributes-order': 'off',
       'vue/first-attribute-linebreak': 'off',
-      'vue/no-side-effects-in-computed-properties': 'off',
+      // computed 内禁止写副作用（曾因历史代码关闭，现已修复相关组件）
+      'vue/no-side-effects-in-computed-properties': 'error',
     },
   },
 ]

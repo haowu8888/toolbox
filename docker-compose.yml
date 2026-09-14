@@ -1,7 +1,10 @@
-# 直接从 Docker Hub 拉取镜像运行，无需本地构建
+# 两种用法：
+#   docker compose up -d --build   # 本地构建镜像（nginx 静态站点 + 金属行情反代）
+#   docker compose pull && docker compose up -d   # 直接拉取 Docker Hub 上已发布的镜像
 services:
   toolbox:
     image: haowu6666/toolbox:latest
+    build: .
     container_name: toolbox
     ports:
       - "8080:80"

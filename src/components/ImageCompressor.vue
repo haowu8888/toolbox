@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onUnmounted } from 'vue'
 import { useToast } from '../composables/useToast'
+import { downloadUrl } from '../utils/download'
+import { formatBytes } from '../utils/format'
 
 const { showToast } = useToast()
 
@@ -33,11 +35,7 @@ const formatOptions = [
   { label: 'WebP', value: 'image/webp' }
 ]
 
-const formatFileSize = (bytes) => {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
-}
+const formatFileSize = (bytes) => formatBytes(bytes)
 
 const reductionPercent = computed(() => {
   if (!originalFile.value || !compressedSize.value) return 0
@@ -66,6 +64,9 @@ const handleFile = (file) => {
   img.onload = () => {
     originalWidth.value = img.width
     originalHeight.value = img.height
+  }
+  img.onerror = () => {
+    showToast('图片读取失败，请确认文件未损坏', 'error')
   }
   img.src = originalUrl.value
 }
@@ -128,6 +129,11 @@ const compress = () => {
 
     canvas.toBlob(
       (blob) => {
+        if (!blob) {
+          isCompressing.value = false
+          showToast('当前浏览器不支持输出该格式，请换一种格式重试', 'error')
+          return
+        }
         if (compressedUrl.value) URL.revokeObjectURL(compressedUrl.value)
         compressedUrl.value = URL.createObjectURL(blob)
         compressedSize.value = blob.size
@@ -153,10 +159,7 @@ const download = () => {
   const baseName = originalFile.value
     ? originalFile.value.name.replace(/\.[^.]+$/, '')
     : 'image'
-  const link = document.createElement('a')
-  link.href = compressedUrl.value
-  link.download = `${baseName}_compressed.${ext}`
-  link.click()
+  downloadUrl(compressedUrl.value, `${baseName}_compressed.${ext}`)
   showToast('下载成功', 'success')
 }
 

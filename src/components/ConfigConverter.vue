@@ -2,10 +2,10 @@
 import { ref } from 'vue'
 import yaml from 'js-yaml'
 import { parse as tomlParse, stringify as tomlStringify } from 'smol-toml'
-import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 const { addHistory } = useHistory()
 
 const inputText = ref('')
@@ -84,15 +84,7 @@ const swapFormats = () => {
   }
 }
 
-const copyOutput = async () => {
-  if (!outputText.value) return
-  try {
-    await navigator.clipboard.writeText(outputText.value)
-    showToast('已复制到剪贴板')
-  } catch {
-    showToast('复制失败', 'error')
-  }
-}
+const copyOutput = () => copyText(outputText.value, { successMessage: '已复制到剪贴板' })
 
 const clearAll = () => {
   inputText.value = ''

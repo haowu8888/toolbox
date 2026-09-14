@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import MetalTrendChart from './MetalTrendChart.vue'
 import './metal-price-tool.css'
 import { useHistory } from '../composables/useStorage'
-import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
+import { useInterval } from '../composables/useInterval'
 import { METAL_DEFS, fetchRealtimeSnapshot } from '../utils/metalPrice'
 import { createHistoryCache, fetchMetalTrend } from '../utils/metalTrend'
 
@@ -17,7 +18,7 @@ const RANGE_OPTIONS = [
 const historyCache = createHistoryCache()
 
 const { addHistory } = useHistory()
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 
 const activeRange = ref('day')
 const snapshot = ref({ updatedAt: '', usdToCnyRate: null, items: [], exchangeRateError: '' })
@@ -25,7 +26,7 @@ const snapshotLoading = ref(true)
 const realtimeRefreshing = ref(false)
 const trendRefreshing = ref(false)
 const trendCards = ref(METAL_DEFS.map((item) => createTrendCard(item)))
-let refreshTimer = null
+let lastSnapshotAt = 0
 
 const displayItems = computed(() => {
   const itemMap = new Map(snapshot.value.items.map((item) => [item.symbol, item]))
@@ -95,14 +96,9 @@ function buildHistoryText() {
     .join(' | ')
 }
 
-async function copyPrice(item, value, label) {
+function copyPrice(item, value, label) {
   if (typeof value !== 'number') return
-  try {
-    await navigator.clipboard.writeText(`${item.name} ${value.toFixed(2)} ${label}`)
-    showToast('报价已复制')
-  } catch {
-    showToast('复制失败', 'error')
-  }
+  copyText(`${item.name} ${value.toFixed(2)} ${label}`, { successMessage: '报价已复制' })
 }
 
 async function loadSnapshot({ manual = false } = {}) {
@@ -112,6 +108,7 @@ async function loadSnapshot({ manual = false } = {}) {
   else snapshotLoading.value = snapshot.value.items.length === 0
 
   snapshot.value = await fetchRealtimeSnapshot()
+  lastSnapshotAt = Date.now()
 
   if (manual && anyRealtimeData.value) {
     addHistory('金属行情', buildHistoryText())
@@ -158,18 +155,10 @@ async function handleManualRefresh() {
   await loadTrends({ forceRefresh: true })
 }
 
-function startAutoRefresh() {
-  refreshTimer = window.setInterval(() => {
-    void loadSnapshot()
-  }, AUTO_REFRESH_MS)
-}
-
-function stopAutoRefresh() {
-  if (refreshTimer) {
-    window.clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-}
+// 自动刷新：切换到其它工具（KeepAlive 缓存）或页面隐藏时自动暂停，避免后台空耗请求
+useInterval(() => {
+  void loadSnapshot()
+}, AUTO_REFRESH_MS)
 
 function selectRange(nextRange) {
   if (nextRange === activeRange.value) return
@@ -180,11 +169,13 @@ function selectRange(nextRange) {
 onMounted(async () => {
   await loadSnapshot()
   await loadTrends()
-  startAutoRefresh()
 })
 
-onUnmounted(() => {
-  stopAutoRefresh()
+// 从 KeepAlive 缓存恢复时，若上次数据已过期则立即补一次刷新
+onActivated(() => {
+  if (lastSnapshotAt && Date.now() - lastSnapshotAt >= AUTO_REFRESH_MS) {
+    void loadSnapshot()
+  }
 })
 </script>
 

@@ -3,9 +3,11 @@ import { ref } from 'vue'
 import CryptoJS from 'crypto-js'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
+const { copyText } = useClipboard()
 
 const activeMode = ref('hash')
 const inputText = ref('')
@@ -68,22 +70,15 @@ const aesDecrypt = () => {
       return
     }
     aesOutput.value = decrypted
-    addHistory('AES 解密', decrypted)
+    // 隐私优先：解密后的明文不写入本地历史记录
+    addHistory('AES 解密', '解密成功（明文未记录）')
     showToast('解密成功')
   } catch (err) {
     showToast('解密失败：密钥错误或密文无效', 'error')
   }
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-    addHistory('文本加密', text)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text, { history: '文本加密' })
 
 const clearAll = () => {
   inputText.value = ''

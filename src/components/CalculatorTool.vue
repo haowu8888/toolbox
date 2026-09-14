@@ -1,9 +1,9 @@
 <script setup>
 import { ref } from 'vue'
-import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 const { addHistory } = useHistory()
 
 const display = ref('0')
@@ -111,14 +111,7 @@ const handleSquareRoot = () => {
   newNumber.value = true
 }
 
-const copyResult = async () => {
-  try {
-    await navigator.clipboard.writeText(display.value)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyResult = () => copyText(display.value)
 
 const clearHistory = () => {
   history.value = []

@@ -1,9 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 import { sanitizeHtml } from '../utils/sanitizeHtml'
+import { encodeBasicEntities as escapeHtml } from '../utils/htmlEntities'
 
+const { copyText } = useClipboard()
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
@@ -66,10 +69,6 @@ const replace = () => {
   }
 }
 
-const escapeHtml = (str) => {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
 const highlightMatches = () => {
   if (!pattern.value.trim() || !testText.value.trim()) {
     return
@@ -96,15 +95,7 @@ const highlightMatches = () => {
   }
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-    addHistory('正则工具', text)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text, { history: '正则工具' })
 
 const clearAll = () => {
   pattern.value = ''

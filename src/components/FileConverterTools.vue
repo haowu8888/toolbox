@@ -3,9 +3,23 @@ import { ref } from 'vue'
 import CryptoJS from 'crypto-js'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
+import { downloadDataUrl, downloadText } from '../utils/download'
+import { formatBytes, truncate } from '../utils/format'
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
+const { copyText } = useClipboard()
+
+// 优先使用浏览器原生 Web Crypto 计算 SHA 摘要（更快），非安全上下文回退到 crypto-js
+const digestHex = async (algorithm, buffer) => {
+  if (globalThis.crypto?.subtle) {
+    const hash = await crypto.subtle.digest(algorithm, buffer)
+    return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  const wordArray = CryptoJS.lib.WordArray.create(buffer)
+  return (algorithm === 'SHA-1' ? CryptoJS.SHA1(wordArray) : CryptoJS.SHA256(wordArray)).toString()
+}
 
 const toolType = ref('image-base64')
 const imageInput = ref('')
@@ -41,15 +55,7 @@ const displayBase64Image = () => {
   imagePreview.value = base64Input.value
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-    addHistory('文件工具', text.length > 100 ? text.substring(0, 100) + '...' : text)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text, { history: ['文件工具', truncate(text, 100)] })
 
 const downloadBase64Image = () => {
   if (!imageInput.value) {
@@ -57,10 +63,7 @@ const downloadBase64Image = () => {
     return
   }
 
-  const link = document.createElement('a')
-  link.href = imageInput.value
-  link.download = 'image.png'
-  link.click()
+  downloadDataUrl(imageInput.value, 'image.png')
 }
 
 const downloadImageAsBase64 = () => {
@@ -69,13 +72,7 @@ const downloadImageAsBase64 = () => {
     return
   }
 
-  const element = document.createElement('a')
-  element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(imageInput.value))
-  element.setAttribute('download', 'image-base64.txt')
-  element.style.display = 'none'
-  document.body.appendChild(element)
-  element.click()
-  document.body.removeChild(element)
+  downloadText(imageInput.value, 'image-base64.txt')
 }
 
 // 文件哈希计算
@@ -84,21 +81,31 @@ const handleFileSelect = (e) => {
   if (!file) return
 
   const reader = new FileReader()
-  reader.onload = (event) => {
+  reader.onload = async (event) => {
     const arrayBuffer = event.target?.result
     if (!arrayBuffer) return
-    const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer)
-    const md5 = CryptoJS.MD5(wordArray).toString()
-    const sha256 = CryptoJS.SHA256(wordArray).toString()
-    hashResult.value = `
-文件: ${file.name}
-类型: ${file.type || '未知'}
-大小: ${(file.size / 1024).toFixed(2)} KB
-
-MD5:    ${md5}
-SHA-256: ${sha256}
-    `.trim()
-    addHistory('文件哈希', `${file.name} MD5: ${md5}`)
+    hashResult.value = '计算中…'
+    try {
+      const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer)
+      const md5 = CryptoJS.MD5(wordArray).toString()
+      const [sha1, sha256] = await Promise.all([
+        digestHex('SHA-1', arrayBuffer),
+        digestHex('SHA-256', arrayBuffer),
+      ])
+      hashResult.value = [
+        `文件: ${file.name}`,
+        `类型: ${file.type || '未知'}`,
+        `大小: ${formatBytes(file.size)}`,
+        '',
+        `MD5:     ${md5}`,
+        `SHA-1:   ${sha1}`,
+        `SHA-256: ${sha256}`,
+      ].join('\n')
+      addHistory('文件哈希', `${file.name} MD5: ${md5}`)
+    } catch (err) {
+      hashResult.value = ''
+      showToast('哈希计算失败：' + err.message, 'error')
+    }
   }
   reader.readAsArrayBuffer(file)
 }

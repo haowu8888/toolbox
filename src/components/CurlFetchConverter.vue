@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 
+const { copyText } = useClipboard()
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
@@ -157,15 +159,7 @@ const convert = () => {
   }
 }
 
-const copyToClipboard = async () => {
-  if (!output.value) return
-  try {
-    await navigator.clipboard.writeText(output.value)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = () => copyText(output.value)
 
 const fillExample = () => {
   curlInput.value = example.value

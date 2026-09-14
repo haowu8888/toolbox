@@ -1,10 +1,8 @@
 <script setup>
 import { ref } from 'vue'
-import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
 
-const { showToast } = useToast()
-const { addHistory } = useHistory()
+const { copyText } = useClipboard()
 
 const activeTab = ref('length')
 
@@ -72,15 +70,8 @@ const convertBase = () => {
   }
 }
 
-const copyToClipboard = async (text, label) => {
-  try {
-    await navigator.clipboard.writeText(String(text))
-    showToast('已复制')
-    if (label) addHistory('单位转换', `${label}: ${text}`)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text, label) =>
+  copyText(text, { history: label ? ['单位转换', `${label}: ${text}`] : null })
 
 // 重量转换
 const weightValue = ref('')

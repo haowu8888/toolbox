@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { tools as toolMeta } from '../tools/meta.js'
-import { safeParseJson, STORAGE_KEYS } from '../utils/storageKeys'
+import { tools as toolMeta, toolCategoryMap } from '../tools/meta.js'
+import { readStorageArray, STORAGE_KEYS } from '../utils/storageKeys'
 
 const emit = defineEmits(['select'])
 
@@ -9,41 +9,9 @@ const showSearch = ref(false)
 const searchInput = ref('')
 const selectedIndex = ref(0)
 const searchInputRef = ref(null)
+const resultsRef = ref(null)
 const recentToolIds = ref([])
-
-const keywordMap = {
-  qrcode: ['二维码', 'qrcode', '生成'],
-  json: ['json', '格式化', 'format'],
-  encrypt: ['加密', '密码', 'encrypt', 'md5', 'sha'],
-  encoding: ['编码', '解码', 'base64', 'url'],
-  regex: ['正则', 'regex', '表达式'],
-  markdown: ['markdown', 'md', '预览'],
-  time: ['时间', '时间戳', '日期', 'time'],
-  convert: ['转换', '长度', '温度', '重量', 'convert'],
-  color: ['颜色', '色彩', 'color', 'hex', 'rgb'],
-  validator: ['验证', '邮箱', '手机', 'email', 'validator'],
-  network: ['网络', 'dns', 'ip', 'network'],
-  urltools: ['url', 'query', 'querystring', 'encode', 'decode', '解析', '参数'],
-  csvjson: ['csv', 'tsv', 'json', '转换', '表格'],
-  curlfetch: ['curl', 'fetch', '转换', '请求'],
-  chmod: ['chmod', '权限', 'rwx', '755', '644', '4755'],
-  notes: ['笔记', '待办', '任务', 'notes', 'todo'],
-  textadvanced: ['文本', 'uuid', '密码', '去重', '大小写'],
-  calculator: ['计算', '计算器', 'calculator', '数学'],
-  codeformatter: ['代码', '格式化', 'sql', 'html', 'xml', '对比'],
-  fileconverter: ['文件', '图片', 'base64', '哈希', 'hash'],
-  jwt: ['jwt', 'token', '解码', '令牌', 'json web token'],
-  cron: ['cron', '定时', '计划任务', '表达式'],
-  diff: ['对比', '差异', 'diff', '比较'],
-  datagen: ['生成', '模拟', '随机', '数据', 'mock'],
-  cssunit: ['css', '单位', 'px', 'rem', 'em', '转换'],
-  imgcompress: ['图片', '压缩', '缩小', 'image', 'compress'],
-  htmlentity: ['html', '实体', '转义', 'entity', '&amp;'],
-  configconvert: ['配置', 'json', 'yaml', 'toml', '转换'],
-  lottery: ['抽奖', '随机', '轮盘', '抽签'],
-  storage: ['历史', '收藏', '记录', 'history'],
-  settings: ['设置', '主题', '配置', 'settings'],
-}
+let previouslyFocused = null
 
 const nameOverrideMap = {
   qrcode: '二维码生成',
@@ -53,8 +21,11 @@ const nameOverrideMap = {
 const tools = toolMeta.map((t) => ({
   id: t.id,
   name: nameOverrideMap[t.id] || t.name,
-  keywords: keywordMap[t.id] || [],
+  description: t.description || '',
+  keywords: t.keywords || [],
   icon: t.icon,
+  color: t.color,
+  category: toolCategoryMap.get(t.id) || '',
 }))
 
 const getRecentRank = (toolId) => {
@@ -62,53 +33,143 @@ const getRecentRank = (toolId) => {
   return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }
 
-const sortToolsByRecent = (items) =>
-  [...items].sort((left, right) => {
-    const rankDiff = getRecentRank(left.id) - getRecentRank(right.id)
-    if (rankDiff !== 0) return rankDiff
-    return tools.findIndex((tool) => tool.id === left.id) - tools.findIndex((tool) => tool.id === right.id)
-  })
-
 const loadRecentTools = () => {
-  const raw = localStorage.getItem(STORAGE_KEYS.recentTools)
-  const ids = safeParseJson(raw, [])
-  recentToolIds.value = Array.isArray(ids) ? ids : []
+  recentToolIds.value = readStorageArray(STORAGE_KEYS.recentTools)
+}
+
+/**
+ * 打分：名称前缀 > 名称包含 > id > 关键词前缀 > 关键词包含 > 描述包含。
+ * 支持多关键词（空格分隔）全部命中。
+ */
+const scoreTool = (tool, terms) => {
+  let total = 0
+  for (const term of terms) {
+    const name = tool.name.toLowerCase()
+    const id = tool.id.toLowerCase()
+    let best = 0
+    if (name.startsWith(term)) best = 100
+    else if (name.includes(term)) best = 80
+    if (id === term) best = Math.max(best, 95)
+    else if (id.includes(term)) best = Math.max(best, 60)
+    for (const keyword of tool.keywords) {
+      const kw = keyword.toLowerCase()
+      if (kw === term) best = Math.max(best, 90)
+      else if (kw.startsWith(term)) best = Math.max(best, 70)
+      else if (kw.includes(term)) best = Math.max(best, 50)
+    }
+    if (tool.description.toLowerCase().includes(term)) best = Math.max(best, 30)
+    if (best === 0) return 0
+    total += best
+  }
+  return total
 }
 
 const filteredTools = computed(() => {
-  if (!searchInput.value.trim()) return sortToolsByRecent(tools)
+  const query = searchInput.value.trim().toLowerCase()
+  if (!query) {
+    return [...tools].sort((left, right) => {
+      const rankDiff = getRecentRank(left.id) - getRecentRank(right.id)
+      if (rankDiff !== 0) return rankDiff
+      return tools.indexOf(left) - tools.indexOf(right)
+    })
+  }
 
-  const query = searchInput.value.toLowerCase()
-  const matches = tools.filter(tool =>
-    tool.name.toLowerCase().includes(query) ||
-    tool.id.toLowerCase().includes(query) ||
-    tool.keywords.some(kw => kw.toLowerCase().includes(query))
-  )
-  return sortToolsByRecent(matches)
+  const terms = query.split(/\s+/).filter(Boolean)
+  return tools
+    .map((tool) => ({ tool, score: scoreTool(tool, terms) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      const rankDiff = getRecentRank(a.tool.id) - getRecentRank(b.tool.id)
+      if (rankDiff !== 0) return rankDiff
+      return tools.indexOf(a.tool) - tools.indexOf(b.tool)
+    })
+    .map((entry) => entry.tool)
 })
 
+const isRecent = (toolId) => recentToolIds.value.includes(toolId)
+
+/**
+ * 将文本按查询词拆成片段用于高亮，避免使用 v-html。
+ */
+const highlightSegments = (text) => {
+  const query = searchInput.value.trim().toLowerCase()
+  if (!query || !text) return [{ text, hit: false }]
+  const terms = query.split(/\s+/).filter(Boolean)
+  const lower = text.toLowerCase()
+  const segments = []
+  let cursor = 0
+  while (cursor < text.length) {
+    let bestIndex = -1
+    let bestLength = 0
+    for (const term of terms) {
+      const index = lower.indexOf(term, cursor)
+      if (index !== -1 && (bestIndex === -1 || index < bestIndex)) {
+        bestIndex = index
+        bestLength = term.length
+      }
+    }
+    if (bestIndex === -1) {
+      segments.push({ text: text.slice(cursor), hit: false })
+      break
+    }
+    if (bestIndex > cursor) segments.push({ text: text.slice(cursor, bestIndex), hit: false })
+    segments.push({ text: text.slice(bestIndex, bestIndex + bestLength), hit: true })
+    cursor = bestIndex + bestLength
+  }
+  return segments
+}
+
+const scrollSelectedIntoView = () => {
+  nextTick(() => {
+    const container = resultsRef.value
+    const active = container?.querySelector('.result-item.active')
+    active?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+const moveSelection = (delta) => {
+  const total = filteredTools.value.length
+  if (!total) return
+  selectedIndex.value = (selectedIndex.value + delta + total) % total
+  scrollSelectedIntoView()
+}
+
 const handleKeyDown = (e) => {
-  if (e.key === 'Enter' && filteredTools.value[selectedIndex.value]) {
-    selectTool(filteredTools.value[selectedIndex.value])
+  if (e.key === 'Enter') {
+    const tool = filteredTools.value[selectedIndex.value]
+    if (tool) selectTool(tool)
   } else if (e.key === 'ArrowDown') {
     e.preventDefault()
-    selectedIndex.value = (selectedIndex.value + 1) % filteredTools.value.length
+    moveSelection(1)
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
-    selectedIndex.value = (selectedIndex.value - 1 + filteredTools.value.length) % filteredTools.value.length
+    moveSelection(-1)
+  } else if (e.key === 'Home') {
+    e.preventDefault()
+    selectedIndex.value = 0
+    scrollSelectedIntoView()
+  } else if (e.key === 'End') {
+    e.preventDefault()
+    selectedIndex.value = Math.max(0, filteredTools.value.length - 1)
+    scrollSelectedIntoView()
   } else if (e.key === 'Escape') {
-    showSearch.value = false
+    e.preventDefault()
+    closeSearch()
+  } else if (e.key === 'Tab') {
+    // 面板内只有一个输入框，Tab 不应离开对话框
+    e.preventDefault()
   }
 }
 
 const selectTool = (tool) => {
   emit('select', tool.id)
-  showSearch.value = false
-  searchInput.value = ''
+  closeSearch()
 }
 
 const openSearch = () => {
   loadRecentTools()
+  previouslyFocused = document.activeElement
   showSearch.value = true
   selectedIndex.value = 0
   searchInput.value = ''
@@ -117,19 +178,30 @@ const openSearch = () => {
   })
 }
 
+const closeSearch = () => {
+  if (!showSearch.value) return
+  showSearch.value = false
+  searchInput.value = ''
+  if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+    previouslyFocused.focus()
+  }
+  previouslyFocused = null
+}
+
 const handleGlobalKeyDown = (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
-    if (showSearch.value) {
-      showSearch.value = false
-    } else {
-      openSearch()
-    }
+    if (showSearch.value) closeSearch()
+    else openSearch()
   }
 }
 
 watch(searchInput, () => {
   selectedIndex.value = 0
+})
+
+watch(showSearch, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
 })
 
 onMounted(() => {
@@ -138,15 +210,19 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeyDown)
+  document.body.style.overflow = ''
 })
 </script>
 
 <template>
   <div class="command-palette">
     <!-- 搜索按钮 -->
-    <button class="search-trigger" @click="openSearch" title="搜索工具 (Ctrl+K)">
-      <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10.7 11.4a6 6 0 1 1 .7-.7l3.65 3.65a.5.5 0 0 1-.7.7L10.7 11.4Z" fill="currentColor"/>
+    <button type="button" class="search-trigger" title="搜索工具 (Ctrl+K)" aria-label="搜索工具" @click="openSearch">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10.7 11.4a6 6 0 1 1 .7-.7l3.65 3.65a.5.5 0 0 1-.7.7L10.7 11.4Z"
+          fill="currentColor"
+        />
       </svg>
       <span class="search-label">搜索</span>
       <kbd class="search-kbd">Ctrl K</kbd>
@@ -155,47 +231,76 @@ onUnmounted(() => {
     <!-- 搜索对话框 -->
     <Teleport to="body">
       <Transition name="overlay">
-        <div v-if="showSearch" class="search-overlay" @click="showSearch = false"></div>
+        <div v-if="showSearch" class="search-overlay" @click="closeSearch"></div>
       </Transition>
 
       <Transition name="panel">
-        <div v-if="showSearch" class="search-panel">
+        <div
+          v-if="showSearch"
+          class="search-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="搜索工具"
+        >
           <div class="search-header">
-            <svg class="input-icon" width="18" height="18" viewBox="0 0 16 16" fill="none">
-              <path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10.7 11.4a6 6 0 1 1 .7-.7l3.65 3.65a.5.5 0 0 1-.7.7L10.7 11.4Z" fill="currentColor"/>
+            <svg class="input-icon" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10.7 11.4a6 6 0 1 1 .7-.7l3.65 3.65a.5.5 0 0 1-.7.7L10.7 11.4Z"
+                fill="currentColor"
+              />
             </svg>
             <input
               ref="searchInputRef"
               v-model="searchInput"
               type="text"
-              placeholder="输入关键词搜索工具..."
+              placeholder="输入工具名、关键词或功能描述…"
               class="search-input"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="command-palette-results"
+              :aria-expanded="true"
+              :aria-activedescendant="filteredTools[selectedIndex] ? `palette-option-${filteredTools[selectedIndex].id}` : undefined"
+              autocomplete="off"
+              spellcheck="false"
               @keydown="handleKeyDown"
             />
             <kbd v-if="!searchInput" class="input-esc">Esc</kbd>
+            <button v-else type="button" class="input-clear" aria-label="清空搜索" @click="searchInput = ''">✕</button>
           </div>
 
-          <div class="search-results">
+          <div id="command-palette-results" ref="resultsRef" class="search-results" role="listbox" aria-label="工具列表">
             <div v-if="filteredTools.length === 0" class="no-results">
               <div class="no-results-icon">🔍</div>
-              <div class="no-results-text">未找到匹配的工具</div>
+              <div class="no-results-text">未找到匹配的工具，试试其它关键词</div>
             </div>
 
             <div
               v-for="(tool, index) in filteredTools"
+              :id="`palette-option-${tool.id}`"
               :key="tool.id"
               :class="['result-item', { active: index === selectedIndex }]"
               :data-tool-id="tool.id"
+              role="option"
+              :aria-selected="index === selectedIndex"
+              :style="{ '--tool-color': tool.color }"
               @click="selectTool(tool)"
               @mousemove="selectedIndex = index"
             >
-              <span class="tool-icon">{{ tool.icon }}</span>
+              <span class="tool-icon" aria-hidden="true">{{ tool.icon }}</span>
               <div class="tool-info">
-                <div class="tool-name">{{ tool.name }}</div>
-                <div class="tool-keywords">{{ tool.keywords.join(' · ') }}</div>
+                <div class="tool-name-row">
+                  <span class="tool-name">
+                    <span v-for="(seg, i) in highlightSegments(tool.name)" :key="i" :class="{ hit: seg.hit }">{{ seg.text }}</span>
+                  </span>
+                  <span v-if="!searchInput && isRecent(tool.id)" class="tool-badge">最近</span>
+                  <span v-if="tool.category" class="tool-category">{{ tool.category }}</span>
+                </div>
+                <div class="tool-desc">
+                  <span v-for="(seg, i) in highlightSegments(tool.description)" :key="i" :class="{ hit: seg.hit }">{{ seg.text }}</span>
+                </div>
               </div>
-              <svg v-if="index === selectedIndex" class="enter-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M13 3v6H4.5l3-3-.7-.7L2.8 9.3l4 4 .7-.7-3-3H14V3h-1Z" fill="currentColor"/>
+              <svg v-if="index === selectedIndex" class="enter-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M13 3v6H4.5l3-3-.7-.7L2.8 9.3l4 4 .7-.7-3-3H14V3h-1Z" fill="currentColor" />
               </svg>
             </div>
           </div>
@@ -215,8 +320,8 @@ onUnmounted(() => {
                 <span>关闭</span>
               </div>
             </div>
-            <div class="results-count" v-if="searchInput">
-              {{ filteredTools.length }} / {{ tools.length }} 个工具
+            <div class="results-count" aria-live="polite">
+              {{ searchInput ? `${filteredTools.length} / ${tools.length} 个工具` : `共 ${tools.length} 个工具` }}
             </div>
           </div>
         </div>
@@ -237,8 +342,8 @@ onUnmounted(() => {
   top: 1.25rem;
   right: 1.5rem;
   padding: 0.5rem 0.85rem;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border);
+  background: var(--surface-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 10px;
@@ -247,31 +352,18 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #555;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  color: var(--text-2);
+  box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
   pointer-events: auto;
   z-index: 9998;
 }
 
-:global([data-theme='dark'] .search-trigger) {
-  background: rgba(30, 40, 55, 0.8);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
 .search-trigger:hover {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(0, 0, 0, 0.12);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
-  color: #333;
-}
-
-:global([data-theme='dark'] .search-trigger:hover) {
-  background: rgba(40, 52, 70, 0.95);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: #e0e8f0;
+  background: var(--surface);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
 }
 
 .search-icon {
@@ -289,26 +381,18 @@ onUnmounted(() => {
   font-size: 0.7rem;
   font-weight: 600;
   padding: 0.15rem 0.4rem;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
   border-radius: 5px;
   color: inherit;
-  opacity: 0.5;
+  opacity: 0.7;
   letter-spacing: 0.05em;
-}
-
-:global([data-theme='dark'] .search-kbd) {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
 }
 
 /* ===== 遮罩层 ===== */
 .search-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: rgba(0, 0, 0, 0.25);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -316,8 +400,8 @@ onUnmounted(() => {
   z-index: 10000;
 }
 
-:global([data-theme='dark'] .search-overlay) {
-  background: rgba(0, 0, 0, 0.5);
+:global([data-theme='dark']) .search-overlay {
+  background: rgba(0, 0, 0, 0.55);
 }
 
 /* ===== 搜索面板 ===== */
@@ -327,30 +411,16 @@ onUnmounted(() => {
   left: 50%;
   transform: translateX(-50%);
   width: 90%;
-  max-width: 580px;
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  max-width: 600px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.12),
-    0 8px 16px rgba(0, 0, 0, 0.06),
-    0 0 0 1px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   pointer-events: auto;
   z-index: 10001;
-}
-
-:global([data-theme='dark'] .search-panel) {
-  background: rgba(22, 28, 40, 0.97);
-  border-color: rgba(255, 255, 255, 0.06);
-  box-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.4),
-    0 8px 16px rgba(0, 0, 0, 0.2),
-    0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 /* ===== 搜索输入区域 ===== */
@@ -359,20 +429,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-:global([data-theme='dark'] .search-header) {
-  border-bottom-color: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
 }
 
 .input-icon {
   flex-shrink: 0;
-  color: #aaa;
-}
-
-:global([data-theme='dark'] .input-icon) {
-  color: #556677;
+  color: var(--text-3);
 }
 
 .search-input {
@@ -382,46 +444,50 @@ onUnmounted(() => {
   font-size: 1rem;
   font-family: inherit;
   background: transparent;
-  color: #1a1a1a;
+  color: var(--text);
+  outline: none;
+  min-width: 0;
+}
+
+.search-input:focus-visible {
   outline: none;
 }
 
-:global([data-theme='dark'] .search-input) {
-  color: #e8edf3;
-}
-
 .search-input::placeholder {
-  color: #bbb;
+  color: var(--text-3);
 }
 
-:global([data-theme='dark'] .search-input::placeholder) {
-  color: #4a5568;
-}
-
-.input-esc {
+.input-esc,
+.input-clear {
   flex-shrink: 0;
   font-family: inherit;
   font-size: 0.7rem;
   font-weight: 600;
   padding: 0.2rem 0.45rem;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
   border-radius: 5px;
-  color: #aaa;
+  color: var(--text-3);
+  box-shadow: none;
+  line-height: 1.2;
 }
 
-:global([data-theme='dark'] .input-esc) {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #556677;
+.input-clear {
+  cursor: pointer;
+}
+
+.input-clear:hover {
+  color: var(--text);
+  transform: none;
 }
 
 /* ===== 搜索结果列表 ===== */
 .search-results {
   flex: 1;
   overflow-y: auto;
-  max-height: 380px;
+  max-height: 400px;
   padding: 0.5rem;
+  scroll-padding: 0.5rem;
 }
 
 .search-results::-webkit-scrollbar {
@@ -429,12 +495,8 @@ onUnmounted(() => {
 }
 
 .search-results::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
+  background: var(--border-strong);
   border-radius: 4px;
-}
-
-:global([data-theme='dark'] .search-results::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.1);
 }
 
 .no-results {
@@ -449,16 +511,12 @@ onUnmounted(() => {
 }
 
 .no-results-text {
-  color: #999;
+  color: var(--text-3);
   font-size: 0.9rem;
 }
 
-:global([data-theme='dark'] .no-results-text) {
-  color: #556677;
-}
-
 .result-item {
-  padding: 0.65rem 0.85rem;
+  padding: 0.6rem 0.85rem;
   display: flex;
   align-items: center;
   gap: 0.85rem;
@@ -468,35 +526,25 @@ onUnmounted(() => {
 }
 
 .result-item.active {
-  background: rgba(78, 205, 196, 0.08);
-}
-
-:global([data-theme='dark'] .result-item.active) {
-  background: rgba(78, 205, 196, 0.1);
+  background: var(--primary-soft);
 }
 
 .tool-icon {
   font-size: 1.35rem;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 9px;
-}
-
-:global([data-theme='dark'] .tool-icon) {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-2);
+  border-radius: 10px;
+  border: 1px solid transparent;
 }
 
 .result-item.active .tool-icon {
-  background: rgba(78, 205, 196, 0.1);
-}
-
-:global([data-theme='dark'] .result-item.active .tool-icon) {
-  background: rgba(78, 205, 196, 0.12);
+  border-color: var(--tool-color, var(--primary));
+  background: var(--surface);
 }
 
 .tool-info {
@@ -504,57 +552,83 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.tool-name {
-  font-weight: 600;
-  color: #2d3748;
-  font-size: 0.9rem;
-  line-height: 1.3;
+.tool-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
-:global([data-theme='dark'] .tool-name) {
-  color: #e0e8f0;
+.tool-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .result-item.active .tool-name {
-  color: #1a8a82;
+  color: var(--tool-color, var(--primary));
 }
 
-:global([data-theme='dark'] .result-item.active .tool-name) {
-  color: #5ecec5;
+.tool-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: #b26a00;
 }
 
-.tool-keywords {
-  font-size: 0.75rem;
-  color: #a0aec0;
+:global([data-theme='dark']) .tool-badge {
+  color: #ffc46b;
+}
+
+.tool-category {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  white-space: nowrap;
+}
+
+.tool-desc {
+  font-size: 0.76rem;
+  color: var(--text-3);
   margin-top: 0.15rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-:global([data-theme='dark'] .tool-keywords) {
-  color: #4a5568;
+.hit {
+  color: var(--tool-color, var(--primary));
+  font-weight: 700;
+  background: var(--primary-soft);
+  border-radius: 3px;
 }
 
 .enter-icon {
   flex-shrink: 0;
-  color: #4ecdc4;
-  opacity: 0.6;
+  color: var(--primary);
+  opacity: 0.7;
 }
 
 /* ===== 底部快捷键 ===== */
 .search-footer {
   padding: 0.65rem 1.25rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-}
-
-:global([data-theme='dark'] .search-footer) {
-  border-top-color: rgba(255, 255, 255, 0.06);
 }
 
 .shortcut-group {
@@ -567,11 +641,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.3rem;
   font-size: 0.75rem;
-  color: #a0aec0;
-}
-
-:global([data-theme='dark'] .shortcut) {
-  color: #4a5568;
+  color: var(--text-3);
 }
 
 kbd {
@@ -580,29 +650,19 @@ kbd {
   justify-content: center;
   min-width: 20px;
   padding: 0.12rem 0.35rem;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
   border-radius: 4px;
   font-family: inherit;
   font-size: 0.7rem;
   font-weight: 600;
-  color: #718096;
+  color: var(--text-2);
   line-height: 1;
-}
-
-:global([data-theme='dark'] kbd) {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #556677;
 }
 
 .results-count {
   font-size: 0.75rem;
-  color: #a0aec0;
-}
-
-:global([data-theme='dark'] .results-count) {
-  color: #4a5568;
+  color: var(--text-3);
 }
 
 /* ===== 动画 ===== */
@@ -639,10 +699,7 @@ kbd {
     gap: 0.35rem;
   }
 
-  .search-label {
-    display: none;
-  }
-
+  .search-label,
   .search-kbd {
     display: none;
   }
@@ -655,7 +712,11 @@ kbd {
   }
 
   .search-results {
-    max-height: 50vh;
+    max-height: 55vh;
+  }
+
+  .tool-category {
+    display: none;
   }
 
   .search-footer {

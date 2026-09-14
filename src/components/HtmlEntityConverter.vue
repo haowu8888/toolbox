@@ -1,62 +1,43 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import {
+  decodeHtmlEntities,
+  encodeHtmlEntities,
+  QUICK_REFERENCE_ENTITIES,
+} from '../utils/htmlEntities'
 
+const { copyText } = useClipboard()
 const { showToast } = useToast()
-const { addHistory } = useHistory()
 
 const inputText = ref('')
 const outputText = ref('')
 const encodingMode = ref('basic')
+const numericStyle = ref('decimal')
 const error = ref('')
 
-const basicEntityMap = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-}
+const inputLength = computed(() => inputText.value.length)
+const outputLength = computed(() => outputText.value.length)
 
-const encodeBasic = (text) => {
-  return text.replace(/[&<>"']/g, (char) => basicEntityMap[char])
-}
-
-const encodeFull = (text) => {
-  let result = ''
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    if (basicEntityMap[char]) {
-      result += basicEntityMap[char]
-    } else if (text.charCodeAt(i) > 127) {
-      result += '&#' + text.charCodeAt(i) + ';'
-    } else {
-      result += char
-    }
-  }
-  return result
-}
-
-const decodeEntities = (text) => {
+// 浏览器兜底：内置表未覆盖的命名实体交给 DOM 解析
+const domFallback = (entity) => {
   const textarea = document.createElement('textarea')
-  textarea.innerHTML = text
+  textarea.innerHTML = entity
   return textarea.value
 }
 
 const handleEncode = () => {
+  error.value = ''
   if (!inputText.value) {
     outputText.value = ''
-    error.value = ''
     return
   }
   try {
-    error.value = ''
-    if (encodingMode.value === 'basic') {
-      outputText.value = encodeBasic(inputText.value)
-    } else {
-      outputText.value = encodeFull(inputText.value)
-    }
+    outputText.value = encodeHtmlEntities(inputText.value, {
+      mode: encodingMode.value,
+      numeric: numericStyle.value,
+    })
   } catch (err) {
     error.value = '编码失败：' + err.message
     outputText.value = ''
@@ -64,14 +45,13 @@ const handleEncode = () => {
 }
 
 const handleDecode = () => {
+  error.value = ''
   if (!inputText.value) {
     outputText.value = ''
-    error.value = ''
     return
   }
   try {
-    error.value = ''
-    outputText.value = decodeEntities(inputText.value)
+    outputText.value = decodeHtmlEntities(inputText.value, { fallback: domFallback })
   } catch (err) {
     error.value = '解码失败：' + err.message
     outputText.value = ''
@@ -84,16 +64,9 @@ const swapInputOutput = () => {
   outputText.value = temp
 }
 
-const copyResult = async () => {
-  if (!outputText.value) return
-  try {
-    await navigator.clipboard.writeText(outputText.value)
-    showToast('已复制')
-    addHistory('HTML实体转换', outputText.value)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyResult = () => copyText(outputText.value, { history: 'HTML实体转换' })
+
+const copyEntity = (entity) => copyText(entity, { successMessage: `已复制 ${entity}` })
 
 const clearAll = () => {
   inputText.value = ''
@@ -101,26 +74,17 @@ const clearAll = () => {
   error.value = ''
 }
 
-const quickReferenceEntities = [
-  { char: '&', entity: '&amp;' },
-  { char: '<', entity: '&lt;' },
-  { char: '>', entity: '&gt;' },
-  { char: '"', entity: '&quot;' },
-  { char: "'", entity: '&#39;' },
-  { char: ' ', entity: '&nbsp;', display: '(space)' },
-  { char: '\u00A9', entity: '&copy;' },
-  { char: '\u00AE', entity: '&reg;' },
-  { char: '\u2122', entity: '&trade;' },
-  { char: '\u20AC', entity: '&euro;' },
-  { char: '\u00A3', entity: '&pound;' },
-  { char: '\u00A5', entity: '&yen;' },
-]
+const loadExample = () => {
+  inputText.value = '<a href="https://example.com?a=1&b=2">Tom & Jerry ©2024 — 你好 🙂</a>'
+  handleEncode()
+  showToast('已载入示例并编码')
+}
 </script>
 
 <template>
   <div class="html-entity-converter">
-    <h2>HTML 实体编码/解码</h2>
-    <p class="description">在 HTML 实体和普通字符之间互相转换</p>
+    <h2>🔣 HTML 实体编码/解码</h2>
+    <p class="description">在 HTML 实体和普通字符之间互相转换，支持命名、十进制与十六进制实体</p>
 
     <div class="controls">
       <div class="mode-options">
@@ -130,33 +94,55 @@ const quickReferenceEntities = [
           基础（仅 &amp; &lt; &gt; &quot; &#39;）
         </label>
         <label>
+          <input v-model="encodingMode" type="radio" value="named" />
+          命名优先（©→&amp;copy;，其余非 ASCII 转数字实体）
+        </label>
+        <label>
           <input v-model="encodingMode" type="radio" value="full" />
           完整（所有非 ASCII 字符转为数字实体）
         </label>
       </div>
+      <div v-if="encodingMode !== 'basic'" class="mode-options">
+        <span class="mode-label">数字实体：</span>
+        <label>
+          <input v-model="numericStyle" type="radio" value="decimal" />
+          十进制 &amp;#169;
+        </label>
+        <label>
+          <input v-model="numericStyle" type="radio" value="hex" />
+          十六进制 &amp;#xA9;
+        </label>
+      </div>
     </div>
 
-    <div v-if="error" class="error-message">{{ error }}</div>
+    <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
     <div class="editor-container">
       <div class="editor">
-        <div class="editor-label">输入</div>
+        <div class="editor-label">
+          <label for="entity-input">输入</label>
+          <span class="editor-count">{{ inputLength }} 字符</span>
+        </div>
         <textarea
+          id="entity-input"
           v-model="inputText"
           placeholder="输入需要编码或解码的文本"
           class="editor-textarea"
+          spellcheck="false"
         ></textarea>
       </div>
 
       <div class="swap-btn-container">
-        <button @click="swapInputOutput" class="btn-swap" title="交换输入输出">
-          ⇄
-        </button>
+        <button type="button" class="btn-swap" title="交换输入输出" aria-label="交换输入输出" @click="swapInputOutput">⇄</button>
       </div>
 
       <div class="editor">
-        <div class="editor-label">输出</div>
+        <div class="editor-label">
+          <label for="entity-output">输出</label>
+          <span class="editor-count">{{ outputLength }} 字符</span>
+        </div>
         <textarea
+          id="entity-output"
           v-model="outputText"
           readonly
           placeholder="转换结果将显示在这里"
@@ -166,26 +152,28 @@ const quickReferenceEntities = [
     </div>
 
     <div class="action-buttons">
-      <button @click="handleEncode" class="btn btn-primary">编码</button>
-      <button @click="handleDecode" class="btn btn-primary">解码</button>
-      <button @click="copyResult" class="btn btn-primary" v-if="outputText">
-        📋 复制结果
-      </button>
-      <button @click="clearAll" class="btn btn-secondary">清空</button>
+      <button type="button" class="btn btn-primary" @click="handleEncode">编码</button>
+      <button type="button" class="btn btn-primary" @click="handleDecode">解码</button>
+      <button v-if="outputText" type="button" class="btn btn-primary" @click="copyResult">📋 复制结果</button>
+      <button type="button" class="btn btn-secondary" @click="loadExample">载入示例</button>
+      <button type="button" class="btn btn-secondary" @click="clearAll">清空</button>
     </div>
 
     <div class="quick-reference">
-      <h3>常用 HTML 实体参考</h3>
+      <h3>常用 HTML 实体参考（点击复制）</h3>
       <div class="entity-grid">
-        <div
-          v-for="item in quickReferenceEntities"
+        <button
+          v-for="item in QUICK_REFERENCE_ENTITIES"
           :key="item.entity"
+          type="button"
           class="entity-card"
+          :title="`复制 ${item.entity}`"
+          @click="copyEntity(item.entity)"
         >
           <span class="entity-char">{{ item.display || item.char }}</span>
-          <span class="entity-arrow">&rarr;</span>
+          <span class="entity-arrow" aria-hidden="true">→</span>
           <code class="entity-code">{{ item.entity }}</code>
-        </div>
+        </button>
       </div>
     </div>
   </div>
@@ -196,24 +184,32 @@ const quickReferenceEntities = [
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  --tool-accent: #795548;
+  --tool-accent-strong: #5d4037;
+  --tool-soft: rgba(121, 85, 72, 0.1);
+  --tool-border: rgba(121, 85, 72, 0.35);
 }
 
 h2 {
   margin: 0;
-  color: #795548;
+  color: var(--tool-accent);
   font-size: 1.8em;
+}
+
+:global([data-theme='dark']) h2 {
+  color: #a1887f;
 }
 
 .description {
   margin: 0;
-  color: #888;
+  color: var(--text-3);
   font-size: 0.95rem;
 }
 
 .controls {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .mode-options {
@@ -226,7 +222,7 @@ h2 {
 .mode-label {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #555;
+  color: var(--text-2);
 }
 
 .mode-options label {
@@ -235,22 +231,27 @@ h2 {
   gap: 0.5rem;
   cursor: pointer;
   font-size: 0.95rem;
-  color: #333;
+  color: var(--text);
 }
 
-.mode-options input[type="radio"] {
+.mode-options input[type='radio'] {
   cursor: pointer;
-  accent-color: #795548;
+  accent-color: var(--tool-accent);
   width: 16px;
   height: 16px;
 }
 
 .error-message {
   padding: 0.75rem;
-  background-color: #fee;
+  background-color: var(--danger-soft);
   color: #c33;
   border-radius: 6px;
   border-left: 4px solid #c33;
+}
+
+:global([data-theme='dark']) .error-message {
+  color: #ff8a8a;
+  border-left-color: #ff8a8a;
 }
 
 .editor-container {
@@ -267,34 +268,42 @@ h2 {
 }
 
 .editor-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-weight: 600;
   font-size: 0.9rem;
-  color: #555;
+  color: var(--text-2);
+}
+
+.editor-count {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--text-3);
 }
 
 .editor-textarea {
   flex: 1;
   min-height: 250px;
   padding: 0.75rem;
-  border: 2px solid #bcaaa4;
+  border: 2px solid var(--tool-border);
   border-radius: 8px;
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: 0.9rem;
-  background-color: #faf5f2;
-  color: #333;
+  background-color: var(--surface);
+  color: var(--text);
   resize: vertical;
   transition: border-color 0.3s;
 }
 
 .editor-textarea:focus {
   outline: none;
-  border-color: #795548;
-  background-color: white;
-  box-shadow: 0 0 0 3px rgba(121, 85, 72, 0.1);
+  border-color: var(--tool-accent);
+  box-shadow: 0 0 0 3px var(--tool-soft);
 }
 
 .editor-textarea[readonly] {
-  background-color: #f9f6f4;
+  background-color: var(--surface-2);
 }
 
 .swap-btn-container {
@@ -309,9 +318,9 @@ h2 {
   width: 45px;
   height: 45px;
   padding: 0;
-  border: 2px solid #795548;
-  background-color: white;
-  color: #795548;
+  border: 2px solid var(--tool-accent);
+  background-color: var(--surface);
+  color: var(--tool-accent);
   border-radius: 50%;
   font-size: 1.2rem;
   cursor: pointer;
@@ -319,10 +328,11 @@ h2 {
   align-items: center;
   justify-content: center;
   transition: all 0.3s;
+  box-shadow: none;
 }
 
 .btn-swap:hover {
-  background-color: #795548;
+  background-color: var(--tool-accent);
   color: white;
   transform: rotate(180deg);
 }
@@ -345,23 +355,23 @@ h2 {
 }
 
 .btn-primary {
-  background-color: #795548;
+  background-color: var(--tool-accent);
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: #5d4037;
+  background-color: var(--tool-accent-strong);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(121, 85, 72, 0.3);
 }
 
 .btn-secondary {
-  background-color: #f0f0f0;
-  color: #333;
+  background-color: var(--surface-3);
+  color: var(--text);
 }
 
 .btn-secondary:hover {
-  background-color: #e0e0e0;
+  background-color: var(--border);
 }
 
 .quick-reference {
@@ -370,13 +380,17 @@ h2 {
 
 .quick-reference h3 {
   margin: 0 0 1rem 0;
-  color: #795548;
+  color: var(--tool-accent);
   font-size: 1.1em;
+}
+
+:global([data-theme='dark']) .quick-reference h3 {
+  color: #a1887f;
 }
 
 .entity-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 0.75rem;
 }
 
@@ -385,38 +399,47 @@ h2 {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 0.8rem;
-  background-color: #faf5f2;
-  border: 1px solid #d7ccc8;
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.9rem;
   transition: all 0.2s;
+  cursor: pointer;
+  box-shadow: none;
+  text-align: left;
+  font-weight: 400;
 }
 
 .entity-card:hover {
-  border-color: #795548;
-  box-shadow: 0 2px 8px rgba(121, 85, 72, 0.1);
+  border-color: var(--tool-accent);
+  box-shadow: 0 2px 8px rgba(121, 85, 72, 0.15);
+  transform: translateY(-1px);
 }
 
 .entity-char {
   font-weight: 700;
   font-size: 1.1rem;
-  color: #795548;
+  color: var(--tool-accent);
   min-width: 30px;
   text-align: center;
 }
 
+:global([data-theme='dark']) .entity-char {
+  color: #a1887f;
+}
+
 .entity-arrow {
-  color: #aaa;
+  color: var(--text-3);
   font-size: 0.85rem;
 }
 
 .entity-code {
-  font-family: 'Courier New', monospace;
-  background-color: #efebe9;
+  font-family: var(--font-mono);
+  background-color: var(--surface-3);
   padding: 0.15rem 0.4rem;
   border-radius: 4px;
   font-size: 0.85rem;
-  color: #5d4037;
+  color: var(--text);
 }
 
 @media (max-width: 768px) {
@@ -438,109 +461,11 @@ h2 {
   .mode-options {
     flex-direction: column;
     align-items: flex-start;
+    gap: 0.5rem;
   }
 
   .entity-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
-}
-
-/* Dark mode styles */
-:global([data-theme='dark'] .html-entity-converter h2) {
-  color: #a1887f;
-}
-
-:global([data-theme='dark'] .html-entity-converter .description) {
-  color: #a0a0a0;
-}
-
-:global([data-theme='dark'] .html-entity-converter .mode-label) {
-  color: #a0a0a0;
-}
-
-:global([data-theme='dark'] .html-entity-converter .mode-options label) {
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .html-entity-converter .error-message) {
-  background-color: #4a2a2a;
-  color: #ff6b6b;
-  border-left-color: #ff6b6b;
-}
-
-:global([data-theme='dark'] .html-entity-converter .editor-label) {
-  color: #a0a0a0;
-}
-
-:global([data-theme='dark'] .html-entity-converter .editor-textarea) {
-  background-color: #2a2a3e;
-  color: #e0e0e0;
-  border-color: #444;
-}
-
-:global([data-theme='dark'] .html-entity-converter .editor-textarea:focus) {
-  background-color: #333;
-  border-color: #a1887f;
-  box-shadow: 0 0 0 3px rgba(161, 136, 127, 0.1);
-}
-
-:global([data-theme='dark'] .html-entity-converter .editor-textarea[readonly]) {
-  background-color: #333;
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .html-entity-converter .btn-swap) {
-  border-color: #a1887f;
-  background-color: #2a2a3e;
-  color: #a1887f;
-}
-
-:global([data-theme='dark'] .html-entity-converter .btn-swap:hover) {
-  background-color: #a1887f;
-  color: #1a1a2e;
-}
-
-:global([data-theme='dark'] .html-entity-converter .btn-primary) {
-  background-color: #795548;
-}
-
-:global([data-theme='dark'] .html-entity-converter .btn-primary:hover) {
-  background-color: #8d6e63;
-}
-
-:global([data-theme='dark'] .html-entity-converter .btn-secondary) {
-  background-color: #404050;
-  color: #e0e0e0;
-}
-
-:global([data-theme='dark'] .html-entity-converter .btn-secondary:hover) {
-  background-color: #505060;
-}
-
-:global([data-theme='dark'] .html-entity-converter .quick-reference h3) {
-  color: #a1887f;
-}
-
-:global([data-theme='dark'] .html-entity-converter .entity-card) {
-  background-color: #2a2a3e;
-  border-color: #444;
-}
-
-:global([data-theme='dark'] .html-entity-converter .entity-card:hover) {
-  border-color: #a1887f;
-  box-shadow: 0 2px 8px rgba(161, 136, 127, 0.15);
-}
-
-:global([data-theme='dark'] .html-entity-converter .entity-char) {
-  color: #a1887f;
-}
-
-:global([data-theme='dark'] .html-entity-converter .entity-arrow) {
-  color: #666;
-}
-
-:global([data-theme='dark'] .html-entity-converter .entity-code) {
-  background-color: #3a3a4e;
-  color: #d7ccc8;
 }
 </style>

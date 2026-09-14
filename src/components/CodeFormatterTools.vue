@@ -1,9 +1,10 @@
 <script setup>
 import { ref } from 'vue'
-import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
+import { diffLines, formatSimpleDiff } from '../utils/diff'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 const { addHistory } = useHistory()
 
 const inputCode = ref('')
@@ -272,23 +273,9 @@ const code2 = ref('')
 const diffResult = ref('')
 
 const compareCode = () => {
-  const lines1 = code1.value.split('\n')
-  const lines2 = code2.value.split('\n')
-
-  diffResult.value = ''
-
-  const maxLines = Math.max(lines1.length, lines2.length)
-  for (let i = 0; i < maxLines; i++) {
-    const line1 = lines1[i] || ''
-    const line2 = lines2[i] || ''
-
-    if (line1 === line2) {
-      diffResult.value += `  ${line1}\n`
-    } else {
-      if (line1) diffResult.value += `- ${line1}\n`
-      if (line2) diffResult.value += `+ ${line2}\n`
-    }
-  }
+  // 使用与「文本对比」工具相同的 patience diff 算法，而不是逐行位置比较
+  const { entries } = diffLines(code1.value, code2.value)
+  diffResult.value = entries.length ? formatSimpleDiff(entries) : ''
 }
 
 const format = () => {
@@ -313,14 +300,7 @@ const format = () => {
   }
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text)
 
 const minify = () => {
   try {

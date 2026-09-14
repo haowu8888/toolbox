@@ -2,11 +2,13 @@
 import { ref, watch, onUnmounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
 import { sanitizeHtml } from '../utils/sanitizeHtml'
+import { downloadText } from '../utils/download'
+import { encodeBasicEntities } from '../utils/htmlEntities'
 
 const { showToast } = useToast()
-const { addHistory } = useHistory()
+const { copyText } = useClipboard()
 
 const markdown = new MarkdownIt({
   html: false,
@@ -27,7 +29,7 @@ const render = () => {
   try {
     htmlOutput.value = sanitizeHtml(markdown.render(inputMarkdown.value))
   } catch (err) {
-    htmlOutput.value = `<p style="color: red;">错误：${err.message}</p>`
+    htmlOutput.value = `<p class="render-error">错误：${encodeBasicEntities(err.message)}</p>`
   }
 }
 
@@ -55,13 +57,7 @@ const downloadMarkdown = () => {
     showToast('请输入 Markdown 内容', 'info')
     return
   }
-  const blob = new Blob([inputMarkdown.value], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'document.md'
-  link.click()
-  URL.revokeObjectURL(url)
+  downloadText(inputMarkdown.value, 'document.md', 'text/markdown;charset=utf-8')
 }
 
 const downloadHtml = () => {
@@ -141,13 +137,7 @@ const downloadHtml = () => {
 </body>
 </html>`
 
-  const blob = new Blob([fullHtml], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'document.html'
-  link.click()
-  URL.revokeObjectURL(url)
+  downloadText(fullHtml, 'document.html', 'text/html;charset=utf-8')
 }
 
 const copyHtmlToClipboard = async () => {
@@ -156,13 +146,7 @@ const copyHtmlToClipboard = async () => {
     showToast('请输入 Markdown 内容', 'info')
     return
   }
-  try {
-    await navigator.clipboard.writeText(html)
-    showToast('已复制 HTML 代码')
-    addHistory('Markdown 转 HTML', html)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
+  copyText(html, { successMessage: '已复制 HTML 代码', history: 'Markdown 转 HTML' })
 }
 
 const clearAll = () => {
@@ -408,6 +392,11 @@ h2 {
 }
 
 /* Markdown 样式 */
+:deep(.markdown-preview) .render-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 :deep(.markdown-preview) h1 {
   font-size: 2em;
   margin: 0.67em 0;

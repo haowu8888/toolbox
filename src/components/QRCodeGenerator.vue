@@ -1,9 +1,10 @@
 <script setup>
 import { ref, watch, onUnmounted } from 'vue'
-import jsQR from 'jsqr'
 import QRCode from 'qrcode'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
+import { downloadDataUrl } from '../utils/download'
 
 const QR_DEBOUNCE_MS = 300
 const QR_IMAGE_WIDTH = 300
@@ -12,6 +13,14 @@ const nativeScanSupported = typeof window !== 'undefined' && 'BarcodeDetector' i
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
+const { copyText } = useClipboard()
+
+// jsQR 约 100KB，只在第一次识别时按需加载，避免拖慢默认工具的首屏
+let jsQrModulePromise = null
+const loadJsQr = () => {
+  if (!jsQrModulePromise) jsQrModulePromise = import('jsqr').then((mod) => mod.default)
+  return jsQrModulePromise
+}
 
 const activeMode = ref('generate')
 const inputValue = ref('')
@@ -68,7 +77,8 @@ const detectWithBarcodeDetector = async (img) => {
   return results[0]?.rawValue ?? ''
 }
 
-const detectWithJsQr = (img) => {
+const detectWithJsQr = async (img) => {
+  const jsQR = await loadJsQr()
   const canvas = document.createElement('canvas')
   const width = img.naturalWidth || img.width
   const height = img.naturalHeight || img.height
@@ -101,10 +111,7 @@ const detectScanResult = async (img) => {
 
 const downloadQRCode = () => {
   if (!qrCodeUrl.value) return
-  const link = document.createElement('a')
-  link.href = qrCodeUrl.value
-  link.download = 'qrcode.png'
-  link.click()
+  downloadDataUrl(qrCodeUrl.value, 'qrcode.png')
   addHistory('二维码生成', inputValue.value)
 }
 
@@ -153,14 +160,7 @@ const scanImage = async (file) => {
   }
 }
 
-const copyScanResult = async () => {
-  try {
-    await navigator.clipboard.writeText(scanResult.value)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyScanResult = () => copyText(scanResult.value)
 
 const clearScan = () => {
   scanResult.value = ''

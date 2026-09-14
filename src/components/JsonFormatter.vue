@@ -1,10 +1,9 @@
 <script setup>
 import { ref, watch, onUnmounted } from 'vue'
-import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
+import { downloadJson as downloadJsonFile } from '../utils/download'
 
-const { showToast } = useToast()
-const { addHistory } = useHistory()
+const { copyText } = useClipboard()
 
 const inputJson = ref('')
 const outputJson = ref('')
@@ -79,35 +78,14 @@ const expandAll = () => {
   collapsedPaths.value = new Set()
 }
 
-const copyPath = async (path) => {
-  try {
-    await navigator.clipboard.writeText(path)
-    showToast('路径已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyPath = (path) => copyText(path, { successMessage: '路径已复制' })
 
-const copyToClipboard = async () => {
-  if (!outputJson.value) return
-  try {
-    await navigator.clipboard.writeText(outputJson.value)
-    showToast('已复制到剪贴板')
-    addHistory('JSON 格式化', outputJson.value)
-  } catch (err) {
-    showToast('复制失败：' + err.message, 'error')
-  }
-}
+const copyToClipboard = () =>
+  copyText(outputJson.value, { successMessage: '已复制到剪贴板', history: 'JSON 格式化' })
 
 const downloadJson = () => {
   if (!outputJson.value) return
-  const blob = new Blob([outputJson.value], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'formatted.json'
-  link.click()
-  URL.revokeObjectURL(url)
+  downloadJsonFile(outputJson.value, 'formatted.json')
 }
 
 const clearAll = () => {

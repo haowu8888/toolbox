@@ -1,29 +1,16 @@
 <script setup>
 import { ref } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { downloadJson as downloadJsonFile, timestampedFilename } from '../utils/download'
+import { randomInt, randomPick, randomPickMany as randomPickMultiple } from '../utils/random'
 
+const { copyText } = useClipboard()
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
 const activeTab = ref('lorem')
-
-// ==================== 随机工具函数 ====================
-const randomInt = (min, max) => {
-  const array = new Uint32Array(1)
-  crypto.getRandomValues(array)
-  return min + (array[0] % (max - min + 1))
-}
-
-const randomPick = (arr) => arr[randomInt(0, arr.length - 1)]
-
-const randomPickMultiple = (arr, count) => {
-  const result = []
-  for (let i = 0; i < count; i++) {
-    result.push(randomPick(arr))
-  }
-  return result
-}
 
 // ==================== 硬编码数据 ====================
 const surnames = ['王', '李', '张', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙', '胡', '朱', '高', '林', '何', '郭', '马', '罗']
@@ -188,29 +175,14 @@ const generateJsonData = () => {
 }
 
 // ==================== 通用操作 ====================
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制到剪贴板')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text, { successMessage: '已复制到剪贴板' })
 
 const downloadJson = () => {
   if (!jsonResult.value) {
     showToast('请先生成 JSON 数据', 'info')
     return
   }
-  const blob = new Blob([jsonResult.value], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `mock-data-${Date.now()}.json`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadJsonFile(jsonResult.value, timestampedFilename('mock-data', 'json'))
   showToast('JSON 文件已下载')
 }
 

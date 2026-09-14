@@ -1,8 +1,15 @@
 <script setup>
 import { ref } from 'vue'
+import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
 
+const REQUEST_TIMEOUT_MS = 10_000
+
+const describeFetchError = (err) =>
+  err?.name === 'TimeoutError' ? '请求超时，请稍后重试' : err?.message || '未知错误'
+
+const { copyText } = useClipboard()
 const { showToast } = useToast()
 const { addHistory } = useHistory()
 
@@ -53,7 +60,10 @@ const lookupDns = async () => {
   dnsResult.value = null
 
   try {
-    const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(dnsInput.value)}&type=${dnsType.value}`)
+    const response = await fetch(
+      `https://dns.google/resolve?name=${encodeURIComponent(dnsInput.value)}&type=${dnsType.value}`,
+      { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    )
     if (!response.ok) throw new Error('DNS 查询失败')
     const data = await response.json()
 
@@ -67,7 +77,7 @@ const lookupDns = async () => {
     }
     addHistory('DNS 查询', `${dnsInput.value} (${dnsType.value})`)
   } catch (err) {
-    showToast('DNS 查询失败：' + err.message, 'error')
+    showToast('DNS 查询失败：' + describeFetchError(err), 'error')
   } finally {
     dnsLoading.value = false
   }
@@ -82,26 +92,21 @@ const lookupMyIp = async () => {
   ipLoading.value = true
   ipResult.value = null
   try {
-    const response = await fetch('https://ipapi.co/json/')
+    const response = await fetch('https://ipapi.co/json/', {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
     if (!response.ok) throw new Error('查询失败')
     const data = await response.json()
     ipResult.value = data
     addHistory('IP 查询', data.ip)
   } catch (err) {
-    showToast('IP 查询失败：' + err.message, 'error')
+    showToast('IP 查询失败：' + describeFetchError(err), 'error')
   } finally {
     ipLoading.value = false
   }
 }
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text)
 
 // DNS 记录类型名称
 const dnsTypeName = (type) => {

@@ -77,9 +77,9 @@ test('clear all data removes browser app state', async ({ page }) => {
   await openSettings(page)
 
   page.once('dialog', (dialog) => dialog.accept())
+  const reloaded = page.waitForEvent('load')
   await page.locator('.danger-actions .btn-danger').click()
-  await page.waitForTimeout(1600)
-  await page.waitForLoadState('domcontentloaded')
+  await reloaded
 
   const state = await readStoredState(page)
 
@@ -111,9 +111,9 @@ test('settings export and import preserve browser app state', async ({ page }) =
   })
 
   await page.evaluate(() => localStorage.clear())
+  const reloadedAfterImport = page.waitForEvent('load')
   await page.locator('.backup-actions input[type="file"]').setInputFiles(downloadPath)
-  await page.waitForTimeout(1800)
-  await page.waitForLoadState('domcontentloaded')
+  await reloadedAfterImport
 
   const restored = await page.evaluate(() => ({
     notes: JSON.parse(localStorage.getItem('toolbox_notes') || '[]'),

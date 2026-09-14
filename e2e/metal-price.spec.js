@@ -71,11 +71,11 @@ const setupMetalRoutes = async (page, counters) => {
     })
   })
 
-  await page.route('https://corsproxy.io/?*', async (route) => {
+  // 走势图经过站点同源代理 /api/finance/chart/<ticker>?interval=&range=
+  await page.route('**/api/finance/chart/**', async (route) => {
     const requestUrl = new URL(route.request().url())
-    const targetUrl = new URL(decodeURIComponent(requestUrl.search.slice(1)))
-    const ticker = targetUrl.pathname.split('/').pop()
-    const range = targetUrl.searchParams.get('range')
+    const ticker = decodeURIComponent(requestUrl.pathname.split('/').pop())
+    const range = requestUrl.searchParams.get('range')
     const key = `${ticker}:${range}`
     const seriesIndex = counters.trendVersions[key] || 0
     const seriesGroups = trendSeries[range]?.[ticker] || [[1, 2, 3]]
@@ -93,7 +93,6 @@ const setupMetalRoutes = async (page, counters) => {
 }
 
 test('metal price tool supports refresh range cache copy and auto refresh flows', async ({ page, context }) => {
-  test.slow()
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
 
   const counters = {
@@ -103,6 +102,8 @@ test('metal price tool supports refresh range cache copy and auto refresh flows'
   }
 
   await setupMetalRoutes(page, counters)
+  // 用假时钟驱动 60 秒自动刷新，避免真实等待一分钟
+  await page.clock.install({ time: new Date('2026-03-27T08:00:00') })
   await page.goto('/#tool-metalprice', { waitUntil: 'domcontentloaded' })
 
   const cards = page.locator('.metal-price-tool .price-card')
@@ -152,8 +153,23 @@ test('metal price tool supports refresh range cache copy and auto refresh flows'
   expect(counters.trend).toHaveLength(trendCallsBeforeCacheRead)
 
   const trendCallsBeforeAutoRefresh = counters.trend.length
-  await page.waitForTimeout(61_000)
+  await page.clock.runFor(61_000)
   await expect(goldCard).toContainText('3020.00 USD/oz')
   expect(counters.realtime).toHaveLength(9)
   expect(counters.trend).toHaveLength(trendCallsBeforeAutoRefresh)
+})
+
+test('metal price tool pauses auto refresh while another tool is active', async ({ page }) => {
+  const counters = { realtime: [], trend: [], trendVersions: {} }
+  await setupMetalRoutes(page, counters)
+  await page.clock.install({ time: new Date('2026-03-27T08:00:00') })
+  await page.goto('/#tool-metalprice', { waitUntil: 'domcontentloaded' })
+  const goldCard = page.locator('.metal-price-tool .price-card').filter({ hasText: 'XAU' })
+  await expect(goldCard).toContainText('3000.00 USD/oz')
+  expect(counters.realtime).toHaveLength(3)
+
+  await page.goto('/#tool-json', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('.tool-panel')).toHaveAttribute('data-active-tool', 'json')
+  await page.clock.runFor(2 * 61_000)
+  expect(counters.realtime).toHaveLength(3)
 })

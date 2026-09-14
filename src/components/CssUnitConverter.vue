@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { useToast } from '../composables/useToast'
+import { useClipboard } from '../composables/useClipboard'
 
-const { showToast } = useToast()
+const { copyText } = useClipboard()
 
 // Base settings
 const rootFontSize = ref(16)
@@ -72,14 +72,7 @@ const referenceTable = computed(() => {
   }))
 })
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(String(text))
-    showToast('已复制')
-  } catch {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text)
 </script>
 
 <template>

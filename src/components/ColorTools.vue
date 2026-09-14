@@ -1,10 +1,8 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useToast } from '../composables/useToast'
-import { useHistory } from '../composables/useStorage'
+import { useClipboard } from '../composables/useClipboard'
 
-const { showToast } = useToast()
-const { addHistory } = useHistory()
+const { copyText } = useClipboard()
 
 const activeTab = ref('convert')
 const colorInput = ref('#4ecdc4')
@@ -149,15 +147,7 @@ watch(
   { deep: true }
 )
 
-const copyToClipboard = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast('已复制')
-    addHistory('颜色工具', text)
-  } catch (err) {
-    showToast('复制失败', 'error')
-  }
-}
+const copyToClipboard = (text) => copyText(text, { history: '颜色工具' })
 
 // 预定义色板
 const palettes = [

@@ -1,20 +1,18 @@
-import { CLEARABLE_STORAGE_KEYS, defaultAppState, safeParseJson, STORAGE_KEYS } from '../utils/storageKeys'
+import { downloadJson, timestampedFilename } from '../utils/download'
+import {
+  CLEARABLE_STORAGE_KEYS,
+  defaultAppState,
+  readStorageJson,
+  readStorageRaw,
+  removeStorageKey,
+  STORAGE_KEYS,
+  writeStorageJson,
+  writeStorageRaw,
+} from '../utils/storageKeys'
 
-const readRawValue = (key, fallback = null) => {
-  try {
-    const value = localStorage.getItem(key)
-    return value ?? fallback
-  } catch (err) {
-    console.error(`Error reading localStorage key "${key}":`, err)
-    return fallback
-  }
-}
-
-const readJsonValue = (key, fallback) => safeParseJson(readRawValue(key), fallback)
-
-const writeJsonValue = (key, value) => {
-  localStorage.setItem(key, JSON.stringify(value))
-}
+export const CONFIG_VERSION = '1.0'
+export const MAX_IMPORT_SIZE = 5 * 1024 * 1024
+const MAX_IMPORT_ITEMS = 500
 
 const normalizeTheme = (theme) => (theme === 'dark' ? 'dark' : 'light')
 
@@ -27,30 +25,69 @@ const normalizeAppState = (appState = {}) => ({
   lotteryRecords: Array.isArray(appState.lotteryRecords) ? appState.lotteryRecords : [],
 })
 
-const readThemeValue = () => normalizeTheme(readRawValue(STORAGE_KEYS.theme, 'light'))
+const readThemeValue = () => normalizeTheme(readStorageRaw(STORAGE_KEYS.theme, 'light'))
 
-const readAppState = () => ({
-  favoriteTools: readJsonValue(STORAGE_KEYS.favoriteTools, defaultAppState().favoriteTools),
-  recentTools: readJsonValue(STORAGE_KEYS.recentTools, defaultAppState().recentTools),
-  lastTool: readRawValue(STORAGE_KEYS.lastTool),
-  notes: readJsonValue(STORAGE_KEYS.notes, defaultAppState().notes),
-  lotteryTemplates: readJsonValue(STORAGE_KEYS.lotteryTemplates, defaultAppState().lotteryTemplates),
-  lotteryRecords: readJsonValue(STORAGE_KEYS.lotteryRecords, defaultAppState().lotteryRecords),
-})
+const readAppState = () => {
+  const defaults = defaultAppState()
+  return {
+    favoriteTools: readStorageJson(STORAGE_KEYS.favoriteTools, defaults.favoriteTools),
+    recentTools: readStorageJson(STORAGE_KEYS.recentTools, defaults.recentTools),
+    lastTool: readStorageRaw(STORAGE_KEYS.lastTool),
+    notes: readStorageJson(STORAGE_KEYS.notes, defaults.notes),
+    lotteryTemplates: readStorageJson(STORAGE_KEYS.lotteryTemplates, defaults.lotteryTemplates),
+    lotteryRecords: readStorageJson(STORAGE_KEYS.lotteryRecords, defaults.lotteryRecords),
+  }
+}
 
 const writeAppState = (appState) => {
-  writeJsonValue(STORAGE_KEYS.favoriteTools, appState.favoriteTools)
-  writeJsonValue(STORAGE_KEYS.recentTools, appState.recentTools)
-  writeJsonValue(STORAGE_KEYS.notes, appState.notes)
-  writeJsonValue(STORAGE_KEYS.lotteryTemplates, appState.lotteryTemplates)
-  writeJsonValue(STORAGE_KEYS.lotteryRecords, appState.lotteryRecords)
+  writeStorageJson(STORAGE_KEYS.favoriteTools, appState.favoriteTools)
+  writeStorageJson(STORAGE_KEYS.recentTools, appState.recentTools)
+  writeStorageJson(STORAGE_KEYS.notes, appState.notes)
+  writeStorageJson(STORAGE_KEYS.lotteryTemplates, appState.lotteryTemplates)
+  writeStorageJson(STORAGE_KEYS.lotteryRecords, appState.lotteryRecords)
 
-  if (appState.lastTool) {
-    localStorage.setItem(STORAGE_KEYS.lastTool, appState.lastTool)
-    return
+  if (appState.lastTool) writeStorageRaw(STORAGE_KEYS.lastTool, appState.lastTool)
+  else removeStorageKey(STORAGE_KEYS.lastTool)
+}
+
+const readFileAsText = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (event) => resolve(String(event.target?.result ?? ''))
+    reader.onerror = () => reject(new Error('读取文件失败'))
+    reader.readAsText(file)
+  })
+
+/**
+ * 校验导入的配置对象，返回规范化后的数据；不合法时抛出带中文说明的错误。
+ */
+export const validateImportedConfig = (data) => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('配置文件格式错误：根节点应为对象')
+  }
+  if (data.version !== CONFIG_VERSION) {
+    throw new Error(`配置文件版本不兼容（期望 ${CONFIG_VERSION}，实际 ${data.version ?? '缺失'}）`)
+  }
+  if (data.history !== undefined && !Array.isArray(data.history)) {
+    throw new Error('配置文件格式错误：history 应为数组')
+  }
+  if (data.favorites !== undefined && !Array.isArray(data.favorites)) {
+    throw new Error('配置文件格式错误：favorites 应为数组')
+  }
+  if (data.appState !== undefined && (typeof data.appState !== 'object' || data.appState === null)) {
+    throw new Error('配置文件格式错误：appState 应为对象')
+  }
+  if (data.config !== undefined && (typeof data.config !== 'object' || data.config === null)) {
+    throw new Error('配置文件格式错误：config 应为对象')
   }
 
-  localStorage.removeItem(STORAGE_KEYS.lastTool)
+  return {
+    config: data.config || {},
+    history: Array.isArray(data.history) ? data.history.slice(0, MAX_IMPORT_ITEMS) : [],
+    favorites: Array.isArray(data.favorites) ? data.favorites.slice(0, MAX_IMPORT_ITEMS) : [],
+    theme: normalizeTheme(data.theme),
+    appState: normalizeAppState(data.appState),
+  }
 }
 
 /**
@@ -58,119 +95,68 @@ const writeAppState = (appState) => {
  */
 export const useConfig = (key = STORAGE_KEYS.config) => {
   const getConfig = () => {
+    const value = readStorageJson(key, {})
+    return value && typeof value === 'object' ? value : {}
+  }
+
+  const saveConfig = (config) => writeStorageJson(key, config)
+
+  const exportConfig = () => ({
+    config: getConfig(),
+    history: readStorageJson(STORAGE_KEYS.history, []),
+    favorites: readStorageJson(STORAGE_KEYS.favorites, []),
+    theme: readThemeValue(),
+    appState: readAppState(),
+    exportDate: new Date().toISOString(),
+    version: CONFIG_VERSION,
+  })
+
+  const downloadConfig = (filename = timestampedFilename('toolbox-config', 'json')) => {
+    downloadJson(exportConfig(), filename)
+  }
+
+  const importConfig = async (file) => {
+    if (!file) throw new Error('未选择文件')
+    if (file.size > MAX_IMPORT_SIZE) throw new Error('配置文件过大，最大支持 5MB')
+
+    const text = await readFileAsText(file)
+    let data
     try {
-      return readJsonValue(key, {})
+      data = JSON.parse(text)
     } catch (err) {
-      console.error(`Error reading config:`, err)
-      return {}
+      throw new Error('配置文件格式错误：' + err.message)
     }
+
+    const normalized = validateImportedConfig(data)
+    writeStorageJson(STORAGE_KEYS.config, normalized.config)
+    writeStorageJson(STORAGE_KEYS.history, normalized.history)
+    writeStorageJson(STORAGE_KEYS.favorites, normalized.favorites)
+    writeStorageRaw(STORAGE_KEYS.theme, normalized.theme)
+    writeAppState(normalized.appState)
+    return data
   }
-
-  const saveConfig = (config) => {
-    try {
-      writeJsonValue(key, config)
-    } catch (err) {
-      console.error(`Error saving config:`, err)
-    }
-  }
-
-  const exportConfig = () => {
-    const config = getConfig()
-    return {
-      config,
-      history: readJsonValue(STORAGE_KEYS.history, []),
-      favorites: readJsonValue(STORAGE_KEYS.favorites, []),
-      theme: readThemeValue(),
-      appState: readAppState(),
-      exportDate: new Date().toISOString(),
-      version: '1.0',
-    }
-  }
-
-  const downloadConfig = (filename = 'toolbox-config.json') => {
-    const data = exportConfig()
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const importConfig = (file) =>
-    new Promise((resolve, reject) => {
-      if (file.size > 5 * 1024 * 1024) {
-        reject(new Error('配置文件过大，最大支持 5MB'))
-        return
-      }
-
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result)
-          if (data.version !== '1.0') {
-            reject(new Error('配置文件版本不兼容'))
-            return
-          }
-
-          if (data.history && !Array.isArray(data.history)) {
-            reject(new Error('配置文件格式错误：history 应为数组'))
-            return
-          }
-
-          if (data.favorites && !Array.isArray(data.favorites)) {
-            reject(new Error('配置文件格式错误：favorites 应为数组'))
-            return
-          }
-
-          if (data.appState && typeof data.appState !== 'object') {
-            reject(new Error('配置文件格式错误：appState 应为对象'))
-            return
-          }
-
-          const history = Array.isArray(data.history) ? data.history.slice(0, 500) : []
-          const favorites = Array.isArray(data.favorites) ? data.favorites.slice(0, 500) : []
-          const appState = normalizeAppState(data.appState)
-
-          writeJsonValue(STORAGE_KEYS.config, data.config || {})
-          writeJsonValue(STORAGE_KEYS.history, history)
-          writeJsonValue(STORAGE_KEYS.favorites, favorites)
-          localStorage.setItem(STORAGE_KEYS.theme, normalizeTheme(data.theme))
-          writeAppState(appState)
-
-          resolve(data)
-        } catch (err) {
-          reject(new Error('配置文件格式错误：' + err.message))
-        }
-      }
-      reader.onerror = () => reject(new Error('读取文件失败'))
-      reader.readAsText(file)
-    })
 
   const clearAllData = () => {
-    for (const storageKey of CLEARABLE_STORAGE_KEYS) {
-      localStorage.removeItem(storageKey)
-    }
+    for (const storageKey of CLEARABLE_STORAGE_KEYS) removeStorageKey(storageKey)
   }
 
-const getDataStats = () => {
+  const getDataStats = () => {
     const config = getConfig()
-    const history = readJsonValue(STORAGE_KEYS.history, [])
-    const favorites = readJsonValue(STORAGE_KEYS.favorites, [])
-    const notes = readJsonValue(STORAGE_KEYS.notes, [])
-    const lotteryRecords = readJsonValue(STORAGE_KEYS.lotteryRecords, [])
-    const totalSize = CLEARABLE_STORAGE_KEYS.reduce((size, storageKey) => {
-      const raw = readRawValue(storageKey, '')
-      return size + raw.length
-    }, 0)
+    const history = readStorageJson(STORAGE_KEYS.history, [])
+    const favorites = readStorageJson(STORAGE_KEYS.favorites, [])
+    const notes = readStorageJson(STORAGE_KEYS.notes, [])
+    const lotteryRecords = readStorageJson(STORAGE_KEYS.lotteryRecords, [])
+    const totalSize = CLEARABLE_STORAGE_KEYS.reduce(
+      (size, storageKey) => size + readStorageRaw(storageKey, '').length,
+      0,
+    )
 
     return {
       configSize: JSON.stringify(config).length,
-      historyCount: history.length,
-      favoritesCount: favorites.length,
-      notesCount: notes.length,
-      lotteryRecordCount: lotteryRecords.length,
+      historyCount: Array.isArray(history) ? history.length : 0,
+      favoritesCount: Array.isArray(favorites) ? favorites.length : 0,
+      notesCount: Array.isArray(notes) ? notes.length : 0,
+      lotteryRecordCount: Array.isArray(lotteryRecords) ? lotteryRecords.length : 0,
       totalSize,
     }
   }
