@@ -1,4 +1,5 @@
-import { describeRequestError, fetchJson } from './http'
+// server.ts（Deno）也会导入本文件，Deno 要求相对导入必须带扩展名
+import { describeRequestError, fetchJson } from './http.js'
 
 export const OUNCE_TO_GRAMS = 31.1034768
 export const POUND_TO_GRAMS = 453.59237

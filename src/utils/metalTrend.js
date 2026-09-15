@@ -1,4 +1,4 @@
-import { fetchJson } from './http'
+import { fetchJson } from './http.js'
 
 const TREND_PROXY_PATH = '/api/finance/chart'
 
