@@ -3,11 +3,8 @@ import { ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
-
-const REQUEST_TIMEOUT_MS = 10_000
-
-const describeFetchError = (err) =>
-  err?.name === 'TimeoutError' ? '请求超时，请稍后重试' : err?.message || '未知错误'
+import { describeRequestError, fetchJson } from '../utils/http'
+import { safeParseUrl } from '../utils/urlUtils'
 
 const { copyText } = useClipboard()
 const { showToast } = useToast()
@@ -22,28 +19,29 @@ const analyzeResult = ref(null)
 const analyzeUrl = () => {
   if (!analyzeInput.value.trim()) return
 
-  try {
-    const url = new URL(analyzeInput.value.startsWith('http') ? analyzeInput.value : 'https://' + analyzeInput.value)
-    const params = []
-    url.searchParams.forEach((value, key) => {
-      params.push({ key, value })
-    })
-    analyzeResult.value = {
-      protocol: url.protocol,
-      hostname: url.hostname,
-      port: url.port || '默认',
-      pathname: url.pathname,
-      search: url.search || '无',
-      hash: url.hash || '无',
-      origin: url.origin,
-      href: url.href,
-      params,
-    }
-    addHistory('网址分析', url.href)
-  } catch (err) {
+  const { url } = safeParseUrl(analyzeInput.value)
+  if (!url) {
     analyzeResult.value = null
     showToast('无效的URL', 'error')
+    return
   }
+
+  const params = []
+  url.searchParams.forEach((value, key) => {
+    params.push({ key, value })
+  })
+  analyzeResult.value = {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port || '默认',
+    pathname: url.pathname,
+    search: url.search || '无',
+    hash: url.hash || '无',
+    origin: url.origin,
+    href: url.href,
+    params,
+  }
+  addHistory('网址分析', url.href)
 }
 
 // DNS 查询 (使用 Google DNS-over-HTTPS)
@@ -54,30 +52,31 @@ const dnsLoading = ref(false)
 const dnsTypes = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SOA']
 
 const lookupDns = async () => {
-  if (!dnsInput.value.trim() || dnsLoading.value) return
+  // 允许直接粘贴完整 URL，只取主机名查询
+  const raw = dnsInput.value.trim()
+  const name = safeParseUrl(raw).url?.hostname || raw
+  if (!name || dnsLoading.value) return
 
+  const type = dnsType.value
   dnsLoading.value = true
   dnsResult.value = null
 
   try {
-    const response = await fetch(
-      `https://dns.google/resolve?name=${encodeURIComponent(dnsInput.value)}&type=${dnsType.value}`,
-      { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+    const data = await fetchJson(
+      `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}`,
     )
-    if (!response.ok) throw new Error('DNS 查询失败')
-    const data = await response.json()
 
     dnsResult.value = {
-      name: dnsInput.value,
-      type: dnsType.value,
+      name,
+      type,
       status: data.Status === 0 ? '成功' : `错误 (状态码: ${data.Status})`,
       answers: data.Answer || [],
       authority: data.Authority || [],
       comment: data.Comment || '',
     }
-    addHistory('DNS 查询', `${dnsInput.value} (${dnsType.value})`)
+    addHistory('DNS 查询', `${name} (${type})`)
   } catch (err) {
-    showToast('DNS 查询失败：' + describeFetchError(err), 'error')
+    showToast('DNS 查询失败：' + describeRequestError(err), 'error')
   } finally {
     dnsLoading.value = false
   }
@@ -92,15 +91,13 @@ const lookupMyIp = async () => {
   ipLoading.value = true
   ipResult.value = null
   try {
-    const response = await fetch('https://ipapi.co/json/', {
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
-    if (!response.ok) throw new Error('查询失败')
-    const data = await response.json()
+    const data = await fetchJson('https://ipapi.co/json/')
+    // ipapi.co 限流时仍返回 200，但带 error/reason 字段
+    if (data?.error) throw new Error(data.reason || '查询失败')
     ipResult.value = data
     addHistory('IP 查询', data.ip)
   } catch (err) {
-    showToast('IP 查询失败：' + describeFetchError(err), 'error')
+    showToast('IP 查询失败：' + describeRequestError(err), 'error')
   } finally {
     ipLoading.value = false
   }
@@ -139,7 +136,7 @@ const dnsTypeName = (type) => {
           type="text"
           placeholder="输入URL，例如: https://example.com/path?query=value#hash"
           class="input-field"
-          @keyup.enter="analyzeUrl"
+          @keydown.enter="!$event.isComposing && analyzeUrl()"
         />
         <button @click="analyzeUrl" class="btn btn-primary">🔍 分析</button>
       </div>
@@ -180,7 +177,7 @@ const dnsTypeName = (type) => {
           type="text"
           placeholder="输入域名，例如: example.com"
           class="input-field"
-          @keyup.enter="lookupDns"
+          @keydown.enter="!$event.isComposing && lookupDns()"
         />
         <select v-model="dnsType" class="select-field">
           <option v-for="t in dnsTypes" :key="t" :value="t">{{ t }}</option>
@@ -538,91 +535,91 @@ h4 {
 }
 
 /* Dark mode */
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] h2 {
   color: #64b5f6;
 }
 
-:global([data-theme='dark']) h4 {
+:root[data-theme='dark'] h4 {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .description {
+:root[data-theme='dark'] .description {
   color: #a0c0e0;
 }
 
-:global([data-theme='dark']) .tab-btn {
+:root[data-theme='dark'] .tab-btn {
   background: #2a3a4a;
   border-color: #3a5a7a;
   color: #a0c0e0;
 }
 
-:global([data-theme='dark']) .tab-btn.active {
+:root[data-theme='dark'] .tab-btn.active {
   background: #2196f3;
   color: white;
   border-color: #2196f3;
 }
 
-:global([data-theme='dark']) .input-field {
+:root[data-theme='dark'] .input-field {
   background: #1a2a3a;
   border-color: #3a5a7a;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .select-field {
+:root[data-theme='dark'] .select-field {
   background: #1a2a3a;
   border-color: #3a5a7a;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .result-card {
+:root[data-theme='dark'] .result-card {
   background: #1a2a3a;
   border-color: #3a5a7a;
 }
 
-:global([data-theme='dark']) .result-row {
+:root[data-theme='dark'] .result-row {
   border-bottom-color: #2a3a4a;
 }
 
-:global([data-theme='dark']) .result-label {
+:root[data-theme='dark'] .result-label {
   color: #a0c0e0;
 }
 
-:global([data-theme='dark']) .result-value {
+:root[data-theme='dark'] .result-value {
   color: #e0e0e0;
   background: rgba(33, 150, 243, 0.1);
 }
 
-:global([data-theme='dark']) .btn-icon {
+:root[data-theme='dark'] .btn-icon {
   border-color: #3a5a7a;
 }
 
-:global([data-theme='dark']) .btn-icon:hover {
+:root[data-theme='dark'] .btn-icon:hover {
   background: #2a3a4a;
 }
 
-:global([data-theme='dark']) .dns-record {
+:root[data-theme='dark'] .dns-record {
   background: #2a3a4a;
 }
 
-:global([data-theme='dark']) .record-type {
+:root[data-theme='dark'] .record-type {
   background: #1a3a5a;
   color: #64b5f6;
 }
 
-:global([data-theme='dark']) .record-data {
+:root[data-theme='dark'] .record-data {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .dns-status.success {
+:root[data-theme='dark'] .dns-status.success {
   background: #1a3a2a;
   color: #5ec89f;
 }
 
-:global([data-theme='dark']) .params-section {
+:root[data-theme='dark'] .params-section {
   border-top-color: #2a3a4a;
 }
 
-:global([data-theme='dark']) .param-value {
+:root[data-theme='dark'] .param-value {
   color: #ffab91;
 }
 </style>

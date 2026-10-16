@@ -1,15 +1,14 @@
 <script setup>
-import { ref, watch, computed, onMounted, onUnmounted, onErrorCaptured } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onUnmounted, onErrorCaptured } from 'vue'
 import { useTheme } from './composables/useTheme'
 import { useToast } from './composables/useToast'
 import { useClipboard } from './composables/useClipboard'
 import { usePwa } from './composables/usePwa'
-import { categoryGroups, toolComponentMap, toolMap, tools } from './tools/registry'
+import { categoryGroups, loadedToolIds, toolComponentMap, toolMap, tools } from './tools/registry'
 import { readStorageArray, readStorageRaw, STORAGE_KEYS, writeStorageJson, writeStorageRaw } from './utils/storageKeys'
 // 常驻 UI 组件保持静态导入
 import CommandPalette from './components/CommandPalette.vue'
 import ToastNotification from './components/ToastNotification.vue'
-import ToolLoading from './components/ToolLoading.vue'
 
 const APP_TITLE = '工具箱'
 const MAX_RECENT_TOOLS = 8
@@ -19,28 +18,6 @@ const { showToast } = useToast()
 const { copyText } = useClipboard()
 const { needRefresh, init: initPwa, applyUpdate, dismissUpdate } = usePwa()
 
-const activeTab = ref(tools[0]?.id || 'qrcode')
-const toolReady = ref(false)
-const componentError = ref(null)
-const componentRetryKey = ref(0)
-const navRef = ref(null)
-const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
-
-const favoriteToolIds = ref([])
-const recentToolIds = ref([])
-
-// 错误边界：捕获子组件渲染错误，避免整个应用崩溃
-onErrorCaptured((err) => {
-  componentError.value = err?.message || '组件加载失败'
-  console.error('组件错误:', err)
-  return false
-})
-
-const retryComponent = () => {
-  componentError.value = null
-  componentRetryKey.value += 1
-}
-
 // ---------- Hash 路由 ----------
 const toolIds = new Set(tools.map((t) => t.id))
 
@@ -49,14 +26,52 @@ const readToolFromHash = () => {
   return hash && toolIds.has(hash) ? hash : ''
 }
 
-const syncHashToTab = () => {
-  const id = readToolFromHash()
-  if (id) activeTab.value = id
-  return Boolean(id)
+// 挂载前就确定初始工具（hash > 上次使用 > 第一个），避免先加载默认工具再切换。
+// explicit 表示来自 hash / 本地记录，只有这种情况才写入"最近使用"。
+const resolveInitialTool = () => {
+  const fromHash = readToolFromHash()
+  if (fromHash) return { id: fromHash, explicit: true }
+  const saved = readStorageRaw(STORAGE_KEYS.lastTool)
+  if (saved && toolIds.has(saved)) return { id: saved, explicit: true }
+  return { id: tools[0]?.id || 'qrcode', explicit: false }
+}
+
+const initialTool = resolveInitialTool()
+const activeTab = ref(initialTool.id)
+const toolReady = computed(() => loadedToolIds.has(activeTab.value))
+const componentError = ref(null)
+const isChunkLoadError = ref(false)
+// 按工具分别计数，重试一个工具不会让 KeepAlive 中其它工具的缓存失效
+const retryKeys = reactive({})
+const navRef = ref(null)
+const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
+
+const favoriteToolIds = ref([])
+const recentToolIds = ref([])
+
+// 错误边界：捕获子组件渲染错误，避免整个应用崩溃
+// 发版后旧 chunk 被删除时的动态 import 失败（Chrome / Firefox / Safari 文案不同）
+const CHUNK_ERROR_PATTERN = /dynamically imported module|Importing a module script failed|error loading dynamically/i
+
+onErrorCaptured((err) => {
+  componentError.value = err?.message || '组件加载失败'
+  isChunkLoadError.value = CHUNK_ERROR_PATTERN.test(String(err?.message))
+  console.error('组件错误:', err)
+  return false
+})
+
+const retryComponent = () => {
+  if (isChunkLoadError.value) {
+    window.location.reload()
+    return
+  }
+  componentError.value = null
+  retryKeys[activeTab.value] = (retryKeys[activeTab.value] || 0) + 1
 }
 
 const onHashChange = () => {
-  syncHashToTab()
+  const id = readToolFromHash()
+  if (id) activeTab.value = id
 }
 
 // ---------- 偏好 ----------
@@ -193,13 +208,20 @@ const handleCommandSelect = (toolId) => {
   activeTab.value = toolId
 }
 
+const syncToolSideEffects = (toolId, { replaceHash = false } = {}) => {
+  if (readToolFromHash() !== toolId) {
+    if (replaceHash) window.history.replaceState(window.history.state, '', `#tool-${toolId}`)
+    else window.location.hash = `#tool-${toolId}`
+  }
+  writeStorageRaw(STORAGE_KEYS.lastTool, toolId)
+  updateRecentTools(toolId)
+  document.title = `${toolMap.get(toolId)?.name ?? ''} · ${APP_TITLE}`
+}
+
 watch(activeTab, (newTab) => {
   componentError.value = null
-  toolReady.value = false
-  if (readToolFromHash() !== newTab) window.location.hash = `#tool-${newTab}`
-  writeStorageRaw(STORAGE_KEYS.lastTool, newTab)
-  updateRecentTools(newTab)
-  document.title = `${toolMap.get(newTab)?.name ?? ''} · ${APP_TITLE}`
+  isChunkLoadError.value = false
+  syncToolSideEffects(newTab)
 })
 
 // ---------- 在线状态 ----------
@@ -216,12 +238,9 @@ const onOffline = () => {
 onMounted(() => {
   initTheme()
   loadToolPrefs()
-  const hasHash = syncHashToTab()
-  if (!hasHash) {
-    const saved = readStorageRaw(STORAGE_KEYS.lastTool)
-    if (saved && toolIds.has(saved)) activeTab.value = saved
-  }
-  document.title = `${currentTool.value?.name ?? ''} · ${APP_TITLE}`
+  // 初始工具来自上次使用时补上 hash，但不新增历史记录
+  if (initialTool.explicit) syncToolSideEffects(activeTab.value, { replaceHash: true })
+  else document.title = `${currentTool.value?.name ?? ''} · ${APP_TITLE}`
   window.addEventListener('hashchange', onHashChange)
   window.addEventListener('online', onOnline)
   window.addEventListener('offline', onOffline)
@@ -363,24 +382,19 @@ onUnmounted(() => {
           </div>
         </div>
         <div v-if="componentError" class="error-boundary" role="alert">
-          <p class="error-title">工具加载时出错</p>
+          <p class="error-title">{{ isChunkLoadError ? '应用已更新，需要刷新页面' : '工具加载时出错' }}</p>
           <p class="error-detail">{{ componentError }}</p>
-          <button type="button" @click="retryComponent">重试</button>
+          <button type="button" @click="retryComponent">{{ isChunkLoadError ? '刷新页面' : '重试' }}</button>
         </div>
-        <Suspense v-else @pending="toolReady = false" @resolve="toolReady = true">
-          <template #default>
-            <KeepAlive :max="10">
-              <component
-                :is="currentComponent"
-                :key="`${activeTab}-${componentRetryKey}`"
-                v-bind="currentComponentProps"
-              />
-            </KeepAlive>
-          </template>
-          <template #fallback>
-            <ToolLoading :tool-name="currentTool?.name" />
-          </template>
-        </Suspense>
+        <!-- KeepAlive 常驻：出错时只移除当前工具，其它工具的缓存状态保留 -->
+        <KeepAlive :max="10">
+          <component
+            :is="currentComponent"
+            v-if="!componentError"
+            :key="`${activeTab}-${retryKeys[activeTab] || 0}`"
+            v-bind="currentComponentProps"
+          />
+        </KeepAlive>
       </div>
     </main>
 
@@ -503,7 +517,7 @@ onUnmounted(() => {
   font-size: 0.75rem;
 }
 
-:global([data-theme='dark']) .offline-badge {
+:root[data-theme='dark'] .offline-badge {
   color: #ffc46b;
 }
 

@@ -12,6 +12,15 @@ const { addHistory } = useHistory()
 
 const activeTab = ref('lorem')
 
+// input[type=number] 的 max 只是提示，手动输入超大值会卡死页面；统一夹到合理范围并回写
+const MAX_COUNT = 1000
+const clampCount = (countRef, fallback) => {
+  const value = Math.floor(Number(countRef.value))
+  const next = Number.isFinite(value) && value >= 1 ? Math.min(value, MAX_COUNT) : fallback
+  countRef.value = next
+  return next
+}
+
 // ==================== 硬编码数据 ====================
 const surnames = ['王', '李', '张', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙', '胡', '朱', '高', '林', '何', '郭', '马', '罗']
 const maleNames = ['伟', '强', '磊', '军', '勇', '杰', '涛', '明', '超', '华', '飞', '鑫', '斌', '波', '宇']
@@ -57,8 +66,9 @@ const loremResult = ref('')
 
 const generateLorem = () => {
   const sentences = loremLang.value === 'zh' ? chineseSentences : loremEnSentences
+  const count = clampCount(loremCount, 3)
   const paragraphs = []
-  for (let i = 0; i < loremCount.value; i++) {
+  for (let i = 0; i < count; i++) {
     const sentenceCount = randomInt(3, 6)
     const paragraph = randomPickMultiple(sentences, sentenceCount).join('')
     paragraphs.push(paragraph)
@@ -92,8 +102,9 @@ const generateName = () => {
 }
 
 const generateNames = () => {
+  const count = clampCount(nameCount, 10)
   const names = []
-  for (let i = 0; i < nameCount.value; i++) {
+  for (let i = 0; i < count; i++) {
     names.push(generateName())
   }
   nameResult.value = names
@@ -138,8 +149,9 @@ const generateAddress = () => {
 }
 
 const generateData = () => {
+  const count = clampCount(dataCount, 5)
   const result = []
-  for (let i = 0; i < dataCount.value; i++) {
+  for (let i = 0; i < count; i++) {
     if (dataType.value === 'email') {
       result.push(generateEmail())
     } else if (dataType.value === 'phone') {
@@ -159,8 +171,9 @@ const jsonCount = ref(5)
 const jsonResult = ref('')
 
 const generateJsonData = () => {
+  const count = clampCount(jsonCount, 5)
   const users = []
-  for (let i = 0; i < jsonCount.value; i++) {
+  for (let i = 0; i < count; i++) {
     users.push({
       name: generateName(),
       email: generateEmail(),
@@ -636,110 +649,110 @@ h2 {
 }
 
 /* ==================== Dark Mode ==================== */
-:global([data-theme='dark'] .data-generator h2) {
+:root[data-theme='dark'] .data-generator h2 {
   color: #ffb74d;
 }
 
-:global([data-theme='dark'] .data-generator .description) {
+:root[data-theme='dark'] .data-generator .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .data-generator .tab-btn) {
+:root[data-theme='dark'] .data-generator .tab-btn {
   background: #2a2a3e;
   border-color: #5c4a2a;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .data-generator .tab-btn.active) {
+:root[data-theme='dark'] .data-generator .tab-btn.active {
   background: #ff9800;
   color: white;
   border-color: #ff9800;
 }
 
-:global([data-theme='dark'] .data-generator .tab-btn:hover:not(.active)) {
+:root[data-theme='dark'] .data-generator .tab-btn:hover:not(.active) {
   border-color: #ff9800;
   color: #ffb74d;
 }
 
-:global([data-theme='dark'] .data-generator .control-group label) {
+:root[data-theme='dark'] .data-generator .control-group label {
   color: #c0c0c0;
 }
 
-:global([data-theme='dark'] .data-generator .control-input) {
+:root[data-theme='dark'] .data-generator .control-input {
   background: #2a2a3e;
   color: #e0e0e0;
   border-color: #5c4a2a;
 }
 
-:global([data-theme='dark'] .data-generator .control-input:focus) {
+:root[data-theme='dark'] .data-generator .control-input:focus {
   border-color: #ff9800;
   box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.15);
 }
 
-:global([data-theme='dark'] .data-generator .hint-text) {
+:root[data-theme='dark'] .data-generator .hint-text {
   color: #707070;
 }
 
-:global([data-theme='dark'] .data-generator .result-box) {
+:root[data-theme='dark'] .data-generator .result-box {
   background: linear-gradient(135deg, #2e2a22, #302c25);
   border-color: #5c4a2a;
 }
 
-:global([data-theme='dark'] .data-generator .result-box:hover) {
+:root[data-theme='dark'] .data-generator .result-box:hover {
   border-color: #7a6030;
   box-shadow: 0 4px 12px rgba(255, 152, 0, 0.15);
 }
 
-:global([data-theme='dark'] .data-generator .result-label) {
+:root[data-theme='dark'] .data-generator .result-label {
   color: #ffb74d;
 }
 
-:global([data-theme='dark'] .data-generator .result-pre) {
+:root[data-theme='dark'] .data-generator .result-pre {
   background: #1e1e2e;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .data-generator .tag-item) {
+:root[data-theme='dark'] .data-generator .tag-item {
   background: #3a3020;
   border-color: #5c4a2a;
   color: #ffb74d;
 }
 
-:global([data-theme='dark'] .data-generator .tag-item:hover) {
+:root[data-theme='dark'] .data-generator .tag-item:hover {
   background: #4a3a28;
   border-color: #7a6030;
 }
 
-:global([data-theme='dark'] .data-generator .data-list-item) {
+:root[data-theme='dark'] .data-generator .data-list-item {
   background: #1e1e2e;
 }
 
-:global([data-theme='dark'] .data-generator .data-list-item:hover) {
+:root[data-theme='dark'] .data-generator .data-list-item:hover {
   background: #2e2a22;
 }
 
-:global([data-theme='dark'] .data-generator .data-index) {
+:root[data-theme='dark'] .data-generator .data-index {
   color: #ffb74d;
 }
 
-:global([data-theme='dark'] .data-generator .data-value) {
+:root[data-theme='dark'] .data-generator .data-value {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .data-generator .btn-secondary) {
+:root[data-theme='dark'] .data-generator .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .data-generator .btn-secondary:hover) {
+:root[data-theme='dark'] .data-generator .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .data-generator .btn-copy-sm) {
+:root[data-theme='dark'] .data-generator .btn-copy-sm {
   color: #ffb74d;
 }
 
-:global([data-theme='dark'] .data-generator .btn-copy-sm:hover) {
+:root[data-theme='dark'] .data-generator .btn-copy-sm:hover {
   background: #3a3020;
 }
 </style>

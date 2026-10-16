@@ -40,6 +40,8 @@ const encrypt = () => {
 const aesInput = ref('')
 const aesKey = ref('')
 const aesOutput = ref('')
+// 输出是否为解密得到的明文：明文不允许进入本地历史
+const aesOutputIsPlaintext = ref(false)
 const aesMode = ref('encrypt')
 
 const aesEncrypt = () => {
@@ -50,6 +52,7 @@ const aesEncrypt = () => {
   try {
     const encrypted = CryptoJS.AES.encrypt(aesInput.value, aesKey.value).toString()
     aesOutput.value = encrypted
+    aesOutputIsPlaintext.value = false
     addHistory('AES 加密', encrypted)
     showToast('加密成功')
   } catch (err) {
@@ -63,13 +66,15 @@ const aesDecrypt = () => {
     return
   }
   try {
-    const bytes = CryptoJS.AES.decrypt(aesInput.value, aesKey.value)
+    // 粘贴的密文常带换行 / 空格，Base64 中不会出现，直接去掉
+    const bytes = CryptoJS.AES.decrypt(aesInput.value.replace(/\s+/g, ''), aesKey.value)
     const decrypted = bytes.toString(CryptoJS.enc.Utf8)
     if (!decrypted) {
       showToast('解密失败：密钥错误或密文无效', 'error')
       return
     }
     aesOutput.value = decrypted
+    aesOutputIsPlaintext.value = true
     // 隐私优先：解密后的明文不写入本地历史记录
     addHistory('AES 解密', '解密成功（明文未记录）')
     showToast('解密成功')
@@ -79,6 +84,9 @@ const aesDecrypt = () => {
 }
 
 const copyToClipboard = (text) => copyText(text, { history: '文本加密' })
+
+const copyAesOutput = () =>
+  copyText(aesOutput.value, { history: aesOutputIsPlaintext.value ? null : 'AES 加密' })
 
 const clearAll = () => {
   inputText.value = ''
@@ -167,7 +175,7 @@ const handleInput = () => {
           </div>
           <div class="result-content">
             <code class="result-hash">{{ aesOutput }}</code>
-            <button @click="copyToClipboard(aesOutput)" class="btn btn-copy" title="复制">📋</button>
+            <button @click="copyAesOutput" class="btn btn-copy" title="复制" aria-label="复制结果">📋</button>
           </div>
         </div>
       </div>
@@ -388,81 +396,81 @@ h2 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .input-textarea) {
+:root[data-theme='dark'] .input-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664444;
 }
 
-:global([data-theme='dark'] .input-textarea:focus) {
+:root[data-theme='dark'] .input-textarea:focus {
   background-color: #333;
   border-color: #ff8a8a;
   box-shadow: 0 0 0 3px rgba(255, 138, 138, 0.1);
 }
 
-:global([data-theme='dark'] .result-item) {
+:root[data-theme='dark'] .result-item {
   background: linear-gradient(135deg, #3a2a2e, #3a3035);
   border-color: #664444;
 }
 
-:global([data-theme='dark'] .result-item:hover) {
+:root[data-theme='dark'] .result-item:hover {
   border-color: #885555;
   box-shadow: 0 4px 12px rgba(255, 107, 107, 0.2);
 }
 
-:global([data-theme='dark'] .algo-name) {
+:root[data-theme='dark'] .algo-name {
   color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .result-hash) {
+:root[data-theme='dark'] .result-hash {
   background-color: #333;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .placeholder) {
+:root[data-theme='dark'] .placeholder {
   color: #707070;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   background: #2a2a3e;
   border-color: #664444;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .tab-btn.active) {
+:root[data-theme='dark'] .tab-btn.active {
   background: #ff6b6b;
   color: white;
   border-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .key-input-group label) {
+:root[data-theme='dark'] .key-input-group label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .key-input) {
+:root[data-theme='dark'] .key-input {
   background: #2a2a3e;
   color: #e0e0e0;
   border-color: #664444;
 }
 
-:global([data-theme='dark'] .key-input:focus) {
+:root[data-theme='dark'] .key-input:focus {
   border-color: #ff8a8a;
   box-shadow: 0 0 0 3px rgba(255, 138, 138, 0.1);
 }

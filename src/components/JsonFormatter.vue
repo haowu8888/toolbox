@@ -1,9 +1,13 @@
 <script setup>
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted, provide } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { downloadJson as downloadJsonFile } from '../utils/download'
+import { childPath, formatJsonText, stripBom } from '../utils/jsonFormat'
+import JsonTreeNode from './JsonTreeNode.vue'
 
 const { copyText } = useClipboard()
+
+const INDENTS = { pretty: 2, pretty4: 4, compact: 0 }
 
 const inputJson = ref('')
 const outputJson = ref('')
@@ -11,64 +15,57 @@ const error = ref('')
 const formatType = ref('pretty')
 const viewMode = ref('text') // 'text' | 'tree'
 const parsedData = ref(null)
+const hasParsedData = ref(false)
+const hasUnsafeNumbers = ref(false)
 const collapsedPaths = ref(new Set())
 let formatTimer = null
 
+const resetResult = () => {
+  outputJson.value = ''
+  parsedData.value = null
+  hasParsedData.value = false
+  hasUnsafeNumbers.value = false
+}
+
 const formatJson = () => {
   if (!inputJson.value.trim()) {
-    outputJson.value = ''
+    resetResult()
     error.value = ''
-    parsedData.value = null
     return
   }
 
   try {
+    // 文本视图走无损格式化：大整数、1.0、转义序列都原样保留
+    const formatted = formatJsonText(inputJson.value, INDENTS[formatType.value] ?? 2)
+    outputJson.value = formatted.text
+    hasUnsafeNumbers.value = formatted.hasUnsafeNumbers
+    parsedData.value = JSON.parse(stripBom(inputJson.value))
+    hasParsedData.value = true
     error.value = ''
-    const parsed = JSON.parse(inputJson.value)
-    parsedData.value = parsed
-
-    if (formatType.value === 'pretty') {
-      outputJson.value = JSON.stringify(parsed, null, 2)
-    } else if (formatType.value === 'compact') {
-      outputJson.value = JSON.stringify(parsed)
-    } else if (formatType.value === 'pretty4') {
-      outputJson.value = JSON.stringify(parsed, null, 4)
-    }
   } catch (err) {
     error.value = 'JSON 格式错误：' + err.message
-    outputJson.value = ''
-    parsedData.value = null
+    resetResult()
   }
 }
 
-// 树形视图辅助函数
-const getType = (val) => {
-  if (val === null) return 'null'
-  if (Array.isArray(val)) return 'array'
-  return typeof val
-}
-
+// 树形视图状态，通过 provide 给递归的 JsonTreeNode 使用
 const toggleCollapse = (path) => {
-  const newSet = new Set(collapsedPaths.value)
-  if (newSet.has(path)) {
-    newSet.delete(path)
-  } else {
-    newSet.add(path)
-  }
-  collapsedPaths.value = newSet
+  const next = new Set(collapsedPaths.value)
+  if (next.has(path)) next.delete(path)
+  else next.add(path)
+  collapsedPaths.value = next
 }
 
 const isCollapsed = (path) => collapsedPaths.value.has(path)
 
+// 折叠除根节点以外的所有容器，保留第一层可见
 const collapseAll = () => {
   const paths = new Set()
-  const walk = (obj, path) => {
-    if (obj && typeof obj === 'object') {
-      paths.add(path)
-      Object.keys(obj).forEach(key => {
-        walk(obj[key], path ? `${path}.${key}` : key)
-      })
-    }
+  const walk = (value, path) => {
+    if (!value || typeof value !== 'object') return
+    if (path !== '$') paths.add(path)
+    if (Array.isArray(value)) value.forEach((item, index) => walk(item, childPath(path, index)))
+    else Object.entries(value).forEach(([key, item]) => walk(item, childPath(path, key)))
   }
   walk(parsedData.value, '$')
   collapsedPaths.value = paths
@@ -78,7 +75,9 @@ const expandAll = () => {
   collapsedPaths.value = new Set()
 }
 
-const copyPath = (path) => copyText(path, { successMessage: '路径已复制' })
+const copyPath = (path) => copyText(path, { successMessage: `路径已复制：${path}` })
+
+provide('jsonTree', { isCollapsed, toggle: toggleCollapse, copyPath })
 
 const copyToClipboard = () =>
   copyText(outputJson.value, { successMessage: '已复制到剪贴板', history: 'JSON 格式化' })
@@ -90,19 +89,24 @@ const downloadJson = () => {
 
 const clearAll = () => {
   inputJson.value = ''
-  outputJson.value = ''
   error.value = ''
-  parsedData.value = null
+  resetResult()
   collapsedPaths.value = new Set()
 }
 
 const loadFile = (event) => {
-  const file = event.target.files?.[0]
+  const input = event.target
+  const file = input.files?.[0]
+  // 清空 value，否则再次选择同一个文件不会触发 change
+  input.value = ''
   if (!file) return
   const reader = new FileReader()
   reader.onload = (e) => {
     inputJson.value = e.target?.result || ''
     formatJson()
+  }
+  reader.onerror = () => {
+    error.value = '读取文件失败'
   }
   reader.readAsText(file)
 }
@@ -117,6 +121,10 @@ const scheduleFormat = () => {
 
 watch(inputJson, scheduleFormat)
 watch(formatType, formatJson)
+// 新数据的路径与旧数据无关，重置折叠状态
+watch(parsedData, () => {
+  collapsedPaths.value = new Set()
+})
 
 onUnmounted(() => {
   if (formatTimer) {
@@ -124,19 +132,6 @@ onUnmounted(() => {
     formatTimer = null
   }
 })
-
-// 树形视图递归渲染数据
-const getEntries = (data) => {
-  if (Array.isArray(data)) {
-    return data.map((v, i) => ({ key: i, value: v }))
-  }
-  return Object.entries(data).map(([k, v]) => ({ key: k, value: v }))
-}
-
-const getPreview = (data) => {
-  if (Array.isArray(data)) return `Array(${data.length})`
-  return `Object{${Object.keys(data).length}}`
-}
 </script>
 
 <template>
@@ -165,14 +160,14 @@ const getPreview = (data) => {
           <button :class="['toggle-btn', { active: viewMode === 'tree' }]" @click="viewMode = 'tree'">树形</button>
         </div>
         <label class="btn btn-file">
-          <input type="file" accept=".json" @change="loadFile" style="display: none" />
+          <input type="file" accept=".json,application/json,text/plain" @change="loadFile" style="display: none" />
           📁 上传 JSON 文件
         </label>
         <button @click="clearAll" class="btn btn-secondary">清空</button>
       </div>
     </div>
 
-    <div v-if="error" class="error-message">{{ error }}</div>
+    <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
     <div class="editor-container">
       <div class="editor">
@@ -199,61 +194,16 @@ const getPreview = (data) => {
       <div v-else class="editor">
         <div class="editor-label">
           树形视图
-          <span v-if="parsedData !== null" class="tree-controls">
+          <span v-if="hasParsedData" class="tree-controls">
             <button @click="expandAll" class="tree-ctrl-btn">全部展开</button>
             <button @click="collapseAll" class="tree-ctrl-btn">全部折叠</button>
           </span>
         </div>
-        <div v-if="parsedData !== null" class="tree-container">
-          <div class="tree-root">
-            <template v-if="typeof parsedData === 'object' && parsedData !== null">
-              <div v-for="entry in getEntries(parsedData)" :key="entry.key" class="tree-node">
-                <template v-if="entry.value && typeof entry.value === 'object'">
-                  <span class="tree-toggle" @click="toggleCollapse('$.' + entry.key)">
-                    {{ isCollapsed('$.' + entry.key) ? '▶' : '▼' }}
-                  </span>
-                  <span class="tree-key" @click="copyPath('$.' + entry.key)" title="点击复制路径">{{ entry.key }}</span>
-                  <span class="tree-colon">:</span>
-                  <span class="tree-preview">{{ getPreview(entry.value) }}</span>
-                  <div v-if="!isCollapsed('$.' + entry.key)" class="tree-children">
-                    <div v-for="child in getEntries(entry.value)" :key="child.key" class="tree-node">
-                      <template v-if="child.value && typeof child.value === 'object'">
-                        <span class="tree-toggle" @click="toggleCollapse('$.' + entry.key + '.' + child.key)">
-                          {{ isCollapsed('$.' + entry.key + '.' + child.key) ? '▶' : '▼' }}
-                        </span>
-                        <span class="tree-key" @click="copyPath('$.' + entry.key + '.' + child.key)" title="点击复制路径">{{ child.key }}</span>
-                        <span class="tree-colon">:</span>
-                        <span class="tree-preview">{{ getPreview(child.value) }}</span>
-                        <div v-if="!isCollapsed('$.' + entry.key + '.' + child.key)" class="tree-children">
-                          <div v-for="grandchild in getEntries(child.value)" :key="grandchild.key" class="tree-node">
-                            <span class="tree-leaf-space"></span>
-                            <span class="tree-key" @click="copyPath('$.' + entry.key + '.' + child.key + '.' + grandchild.key)" title="点击复制路径">{{ grandchild.key }}</span>
-                            <span class="tree-colon">:</span>
-                            <span :class="'tree-value type-' + getType(grandchild.value)">{{ grandchild.value === null ? 'null' : typeof grandchild.value === 'object' ? JSON.stringify(grandchild.value) : JSON.stringify(grandchild.value) }}</span>
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else>
-                        <span class="tree-leaf-space"></span>
-                        <span class="tree-key" @click="copyPath('$.' + entry.key + '.' + child.key)" title="点击复制路径">{{ child.key }}</span>
-                        <span class="tree-colon">:</span>
-                        <span :class="'tree-value type-' + getType(child.value)">{{ child.value === null ? 'null' : JSON.stringify(child.value) }}</span>
-                      </template>
-                    </div>
-                  </div>
-                </template>
-                <template v-else>
-                  <span class="tree-leaf-space"></span>
-                  <span class="tree-key" @click="copyPath('$.' + entry.key)" title="点击复制路径">{{ entry.key }}</span>
-                  <span class="tree-colon">:</span>
-                  <span :class="'tree-value type-' + getType(entry.value)">{{ entry.value === null ? 'null' : JSON.stringify(entry.value) }}</span>
-                </template>
-              </div>
-            </template>
-            <template v-else>
-              <span :class="'tree-value type-' + getType(parsedData)">{{ JSON.stringify(parsedData) }}</span>
-            </template>
-          </div>
+        <div v-if="hasParsedData" class="tree-container">
+          <p v-if="hasUnsafeNumbers" class="tree-note">
+            ⚠️ 含超出 JavaScript 精度的大整数，树形视图中显示为近似值；文本视图保持原样。
+          </p>
+          <JsonTreeNode :value="parsedData" path="$" />
         </div>
         <div v-else class="tree-placeholder">解析 JSON 后显示树形结构</div>
       </div>
@@ -474,6 +424,13 @@ h2 {
   font-size: 0.85rem;
 }
 
+.tree-note {
+  margin: 0 0 0.75rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: #b26a00;
+}
+
 .tree-placeholder {
   min-height: 300px;
   display: flex;
@@ -485,60 +442,15 @@ h2 {
   font-style: italic;
 }
 
-.tree-node {
-  line-height: 1.6;
-}
 
-.tree-children {
-  padding-left: 1.5rem;
-  border-left: 1px dashed #ddd;
-  margin-left: 0.4rem;
-}
 
-.tree-toggle {
-  cursor: pointer;
-  display: inline-block;
-  width: 1rem;
-  text-align: center;
-  color: #999;
-  font-size: 0.7rem;
-  user-select: none;
-}
 
-.tree-toggle:hover {
-  color: #42b883;
-}
 
-.tree-leaf-space {
-  display: inline-block;
-  width: 1rem;
-}
 
-.tree-key {
-  color: #881391;
-  cursor: pointer;
-  font-weight: 600;
-}
 
-.tree-key:hover {
-  text-decoration: underline;
-}
 
-.tree-colon {
-  color: #333;
-  margin: 0 0.3rem;
-}
 
-.tree-preview {
-  color: #999;
-  font-size: 0.8rem;
-  font-style: italic;
-}
 
-.tree-value.type-string { color: #0B7500; }
-.tree-value.type-number { color: #1A01CC; }
-.tree-value.type-boolean { color: #FF6B6B; }
-.tree-value.type-null { color: #808080; font-style: italic; }
 
 @media (prefers-color-scheme: light) {
   .format-options label {
@@ -574,92 +486,79 @@ h2 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #5ec89f;
 }
 
-:global([data-theme='dark'] .format-options label) {
+:root[data-theme='dark'] .format-options label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .editor-label) {
+:root[data-theme='dark'] .editor-label {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .editor-textarea) {
+:root[data-theme='dark'] .editor-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #444;
 }
 
-:global([data-theme='dark'] .editor-textarea:focus) {
+:root[data-theme='dark'] .editor-textarea:focus {
   border-color: #5ec89f;
   box-shadow: 0 0 0 3px rgba(94, 200, 159, 0.1);
 }
 
-:global([data-theme='dark'] .editor-textarea[readonly]) {
+:root[data-theme='dark'] .editor-textarea[readonly] {
   background-color: #333;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .error-message) {
+:root[data-theme='dark'] .error-message {
   background-color: #4a2a2a;
   color: #ff6b6b;
   border-left-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .toggle-btn) {
+:root[data-theme='dark'] .toggle-btn {
   background: #2a2a3e;
   color: #5ec89f;
 }
 
-:global([data-theme='dark'] .toggle-btn.active) {
+:root[data-theme='dark'] .toggle-btn.active {
   background: #42b883;
   color: white;
 }
 
-:global([data-theme='dark'] .tree-container) {
+:root[data-theme='dark'] .tree-container {
   background: #2a2a3e;
   border-color: #444;
 }
 
-:global([data-theme='dark'] .tree-placeholder) {
+:root[data-theme='dark'] .tree-placeholder {
   border-color: #444;
   color: #666;
 }
 
-:global([data-theme='dark'] .tree-children) {
-  border-left-color: #555;
-}
 
-:global([data-theme='dark'] .tree-key) {
-  color: #c792ea;
-}
 
-:global([data-theme='dark'] .tree-colon) {
-  color: #e0e0e0;
-}
 
-:global([data-theme='dark'] .tree-ctrl-btn) {
+:root[data-theme='dark'] .tree-ctrl-btn {
   border-color: #555;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .tree-ctrl-btn:hover) {
+:root[data-theme='dark'] .tree-ctrl-btn:hover {
   background: #3a3a4e;
 }
 
-:global([data-theme='dark'] .tree-value.type-string) { color: #c3e88d; }
-:global([data-theme='dark'] .tree-value.type-number) { color: #f78c6c; }
-:global([data-theme='dark'] .tree-value.type-boolean) { color: #ff5370; }
-:global([data-theme='dark'] .tree-value.type-null) { color: #808080; }
 </style>

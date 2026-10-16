@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
+import { csvToObjects, objectsToCsv } from '../utils/csv'
 
 const { copyText } = useClipboard()
 const { showToast } = useToast()
@@ -17,98 +18,13 @@ const jsonInput = ref('')
 const output = ref('')
 const error = ref('')
 
-const delimiterLabel = (d) => (d === '\t' ? 'Tab' : '逗号')
-
-const parseDelimited = (text, delim) => {
-  const rows = []
-  let row = []
-  let field = ''
-  let inQuotes = false
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-
-    if (inQuotes) {
-      if (char === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i++
-        } else {
-          inQuotes = false
-        }
-      } else {
-        field += char
-      }
-      continue
-    }
-
-    if (char === '"') {
-      inQuotes = true
-      continue
-    }
-
-    if (char === '\r') continue
-
-    if (char === delim) {
-      row.push(field)
-      field = ''
-      continue
-    }
-
-    if (char === '\n') {
-      row.push(field)
-      field = ''
-      rows.push(row)
-      row = []
-      continue
-    }
-
-    field += char
-  }
-
-  row.push(field)
-  rows.push(row)
-
-  return rows.filter((r) => r.some((c) => c !== ''))
-}
-
-const escapeCsvField = (value, delim) => {
-  const raw = value === null || value === undefined ? '' : String(value)
-  const escaped = raw.replaceAll('"', '""')
-  const needsQuote = escaped.includes('"') || escaped.includes('\n') || escaped.includes('\r') || escaped.includes(delim)
-  return needsQuote ? `"${escaped}"` : escaped
-}
-
-const toCsv = (objects, delim) => {
-  const headers = []
-  const headerSet = new Set()
-
-  const addHeader = (key) => {
-    if (headerSet.has(key)) return
-    headerSet.add(key)
-    headers.push(key)
-  }
-
-  for (const obj of objects) {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) continue
-    Object.keys(obj).forEach(addHeader)
-  }
-
-  const lines = []
-  lines.push(headers.map((h) => escapeCsvField(h, delim)).join(delim))
-
-  for (const obj of objects) {
-    const line = headers
-      .map((h) => {
-        const value = obj && typeof obj === 'object' ? obj[h] : ''
-        return escapeCsvField(value, delim)
-      })
-      .join(delim)
-    lines.push(line)
-  }
-
-  return lines.join('\n')
-}
+const DELIMITERS = [
+  { value: ',', label: '逗号 (,)' },
+  { value: '\t', label: 'Tab (TSV)' },
+  { value: ';', label: '分号 (;)' },
+  { value: '|', label: '竖线 (|)' },
+]
+const delimiterLabel = (d) => DELIMITERS.find((item) => item.value === d)?.label ?? d
 
 const convert = () => {
   error.value = ''
@@ -117,21 +33,7 @@ const convert = () => {
   try {
     if (mode.value === 'csv2json') {
       if (!csvInput.value.trim()) return
-      const rows = parseDelimited(csvInput.value.trim(), delimiter.value)
-      if (rows.length === 0) return
-
-      const headers = hasHeader.value
-        ? rows[0].map((h) => h.trim())
-        : rows[0].map((_, idx) => `col${idx + 1}`)
-
-      const dataRows = hasHeader.value ? rows.slice(1) : rows
-      const list = dataRows.map((r) => {
-        const obj = {}
-        headers.forEach((h, idx) => {
-          obj[h] = r[idx] ?? ''
-        })
-        return obj
-      })
+      const list = csvToObjects(csvInput.value, { delimiter: delimiter.value, hasHeader: hasHeader.value })
 
       output.value = JSON.stringify(list, null, 2)
       addHistory('CSV 转 JSON', `行数: ${list.length}，分隔符: ${delimiterLabel(delimiter.value)}`)
@@ -145,7 +47,7 @@ const convert = () => {
         throw new Error('JSON 需为对象数组（或单个对象）')
       }
 
-      output.value = toCsv(list, delimiter.value)
+      output.value = objectsToCsv(list, { delimiter: delimiter.value })
       addHistory('JSON 转 CSV', `行数: ${list.length}，分隔符: ${delimiterLabel(delimiter.value)}`)
       showToast('转换完成')
     }
@@ -156,12 +58,17 @@ const convert = () => {
 
 const copyToClipboard = () => copyText(output.value)
 
+// 把输出作为反方向转换的输入，并切换到对应模式
 const swap = () => {
   if (mode.value === 'csv2json') {
     jsonInput.value = output.value
+    mode.value = 'json2csv'
   } else {
     csvInput.value = output.value
+    mode.value = 'csv2json'
   }
+  output.value = ''
+  error.value = ''
 }
 
 const clearAll = () => {
@@ -190,9 +97,9 @@ const clearAll = () => {
       <div class="options">
         <label>
           <span>分隔符：</span>
+          <!-- 用绑定值：静态的 value="\t" 是反斜杠加 t 两个字符，不是制表符 -->
           <select v-model="delimiter" class="select">
-            <option value=",">逗号 (,)</option>
-            <option value="\t">Tab (TSV)</option>
+            <option v-for="item in DELIMITERS" :key="item.label" :value="item.value">{{ item.label }}</option>
           </select>
         </label>
         <label v-if="mode === 'csv2json'">
@@ -202,7 +109,7 @@ const clearAll = () => {
       </div>
     </div>
 
-    <div v-if="error" class="error-message">{{ error }}</div>
+    <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
     <div class="editor-container">
       <div class="editor">
@@ -211,7 +118,7 @@ const clearAll = () => {
           v-if="mode === 'csv2json'"
           v-model="csvInput"
           class="editor-textarea"
-          placeholder="name,age\nAlice,18\nBob,20"
+          :placeholder="'name,age\nAlice,18\nBob,20'"
         ></textarea>
         <textarea
           v-else
@@ -382,32 +289,32 @@ h2 {
   }
 }
 
-:global([data-theme='dark']) .description {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .tab-btn {
+:root[data-theme='dark'] .tab-btn {
   background: #2a2a3e;
   border-color: #00bcd4;
   color: #b2ebf2;
 }
 
-:global([data-theme='dark']) .tab-btn.active {
+:root[data-theme='dark'] .tab-btn.active {
   background: #00bcd4;
   color: #102026;
 }
 
-:global([data-theme='dark']) .editor-label {
+:root[data-theme='dark'] .editor-label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .editor-textarea {
+:root[data-theme='dark'] .editor-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #007c8a;
 }
 
-:global([data-theme='dark']) .btn-secondary {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #2a2a3e;
   color: #b2ebf2;
   border: 1px solid rgba(0, 188, 212, 0.35);

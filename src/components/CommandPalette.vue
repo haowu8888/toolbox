@@ -136,6 +136,8 @@ const moveSelection = (delta) => {
 }
 
 const handleKeyDown = (e) => {
+  // 中文输入法组字时按 Enter 是在上屏，不是选择工具
+  if (e.isComposing || e.keyCode === 229) return
   if (e.key === 'Enter') {
     const tool = filteredTools.value[selectedIndex.value]
     if (tool) selectTool(tool)
@@ -400,7 +402,7 @@ onUnmounted(() => {
   z-index: 10000;
 }
 
-:global([data-theme='dark']) .search-overlay {
+:root[data-theme='dark'] .search-overlay {
   background: rgba(0, 0, 0, 0.55);
 }
 
@@ -583,7 +585,7 @@ onUnmounted(() => {
   color: #b26a00;
 }
 
-:global([data-theme='dark']) .tool-badge {
+:root[data-theme='dark'] .tool-badge {
   color: #ffc46b;
 }
 

@@ -208,32 +208,32 @@ code {
   }
 }
 
-:global([data-theme='dark']) .description {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .editor-label {
+:root[data-theme='dark'] .editor-label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .editor-textarea {
+:root[data-theme='dark'] .editor-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #1b5e84;
 }
 
-:global([data-theme='dark']) .btn-secondary {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #2a2a3e;
   color: #90caf9;
   border: 1px solid rgba(33, 150, 243, 0.35);
 }
 
-:global([data-theme='dark']) .tips {
+:root[data-theme='dark'] .tips {
   background: rgba(26, 26, 46, 0.6);
   border-color: rgba(33, 150, 243, 0.35);
 }
 
-:global([data-theme='dark']) .tip-title {
+:root[data-theme='dark'] .tip-title {
   color: #90caf9;
 }
 </style>

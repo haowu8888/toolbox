@@ -460,7 +460,7 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-:global([data-theme='dark']) code {
+:root[data-theme='dark'] code {
   color: #64b5f6;
 }
 
@@ -546,8 +546,8 @@ code {
   }
 }
 
-:global([data-theme='dark']) h2,
-:global([data-theme='dark']) .time-value {
+:root[data-theme='dark'] h2,
+:root[data-theme='dark'] .time-value {
   color: #64b5f6;
 }
 </style>

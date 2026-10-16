@@ -4,6 +4,7 @@ import yaml from 'js-yaml'
 import { parse as tomlParse, stringify as tomlStringify } from 'smol-toml'
 import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
+import { formatJsonText } from '../utils/jsonFormat'
 
 const { copyText } = useClipboard()
 const { addHistory } = useHistory()
@@ -25,7 +26,13 @@ const formats = [
 const parseInput = (text, format) => {
   switch (format) {
     case 'json':
-      return JSON.parse(text)
+      try {
+        return JSON.parse(text)
+      } catch (err) {
+        // 复用无损格式化器的校验，给出带行列号的中文错误
+        formatJsonText(text)
+        throw err
+      }
     case 'yaml':
       return yaml.load(text)
     case 'toml':
@@ -33,6 +40,25 @@ const parseInput = (text, format) => {
     default:
       throw new Error('不支持的源格式')
   }
+}
+
+// TOML 没有 null，且顶层必须是表；提前给出可定位的中文提示
+const findNullPath = (value, path = '') => {
+  if (value === null) return path || '(根)'
+  if (typeof value !== 'object') return ''
+  for (const [key, child] of Object.entries(value)) {
+    const found = findNullPath(child, Array.isArray(value) ? `${path}[${key}]` : path ? `${path}.${key}` : key)
+    if (found) return found
+  }
+  return ''
+}
+
+const assertTomlCompatible = (obj) => {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    throw new Error('TOML 的顶层必须是对象（键值表），不能是数组或单个值')
+  }
+  const nullPath = findNullPath(obj)
+  if (nullPath) throw new Error(`TOML 不支持 null 值，位置：${nullPath}`)
 }
 
 // Serialize JS object to target format string
@@ -43,6 +69,7 @@ const serializeOutput = (obj, format, indent) => {
     case 'yaml':
       return yaml.dump(obj, { indent, lineWidth: -1, noRefs: true })
     case 'toml':
+      assertTomlCompatible(obj)
       return tomlStringify(obj, { newline: '\n' })
     default:
       throw new Error('不支持的目标格式')
@@ -221,7 +248,7 @@ h2 {
   border: 1px solid #ffe0b2;
 }
 
-:global([data-theme='dark']) .toolbar {
+:root[data-theme='dark'] .toolbar {
   background: #2a2a3a;
   border-color: #4a3a2a;
 }
@@ -245,7 +272,7 @@ h2 {
   color: #666;
 }
 
-:global([data-theme='dark']) .format-label {
+:root[data-theme='dark'] .format-label {
   color: #a0c0e0;
 }
 
@@ -260,7 +287,7 @@ h2 {
   min-width: 100px;
 }
 
-:global([data-theme='dark']) .select-field {
+:root[data-theme='dark'] .select-field {
   background: #1a1a2e;
   border-color: #4a3a2a;
   color: #e0e0e0;
@@ -286,7 +313,7 @@ h2 {
   color: #ff9800;
 }
 
-:global([data-theme='dark']) .btn-swap {
+:root[data-theme='dark'] .btn-swap {
   background: #1a1a2e;
   border-color: #4a3a2a;
   color: #ffb74d;
@@ -330,7 +357,7 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark']) .btn-secondary {
+:root[data-theme='dark'] .btn-secondary {
   background: #2a2a3a;
   color: #e0e0e0;
 }
@@ -339,7 +366,7 @@ h2 {
   background: #e0e0e0;
 }
 
-:global([data-theme='dark']) .btn-secondary:hover {
+:root[data-theme='dark'] .btn-secondary:hover {
   background: #3a3a4a;
 }
 
@@ -353,7 +380,7 @@ h2 {
   font-weight: 500;
 }
 
-:global([data-theme='dark']) .btn-copy {
+:root[data-theme='dark'] .btn-copy {
   color: #ffb74d;
   border-color: #ffb74d;
 }
@@ -373,7 +400,7 @@ h2 {
   font-size: 0.9rem;
 }
 
-:global([data-theme='dark']) .error-msg {
+:root[data-theme='dark'] .error-msg {
   background: #3a2a1a;
   border-color: #5a3a1a;
   color: #ffb74d;
@@ -403,7 +430,7 @@ h2 {
   color: #555;
 }
 
-:global([data-theme='dark']) .editor-label {
+:root[data-theme='dark'] .editor-label {
   color: #a0c0e0;
 }
 
@@ -423,7 +450,7 @@ h2 {
   tab-size: 2;
 }
 
-:global([data-theme='dark']) .code-textarea {
+:root[data-theme='dark'] .code-textarea {
   background: #1a1a2e;
   border-color: #4a3a2a;
   color: #e0e0e0;
@@ -439,15 +466,15 @@ h2 {
   background: #fffaf5;
 }
 
-:global([data-theme='dark']) .code-textarea.output {
+:root[data-theme='dark'] .code-textarea.output {
   background: #22222e;
 }
 
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] h2 {
   color: #ffb74d;
 }
 
-:global([data-theme='dark']) .description {
+:root[data-theme='dark'] .description {
   color: #a0c0e0;
 }
 

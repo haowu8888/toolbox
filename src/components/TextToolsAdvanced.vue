@@ -25,7 +25,9 @@ const uuidList = ref([generateUUID()])
 
 const refreshUuids = () => {
   const list = []
-  const count = parseInt(uuidCount.value, 10) || 1
+  // input[type=number] 的 max 只是提示，手输 100000 仍会生效，这里兜底
+  const count = Math.min(100, Math.max(1, parseInt(uuidCount.value, 10) || 1))
+  uuidCount.value = count
   for (let i = 0; i < count; i++) {
     list.push(generateUUID())
   }
@@ -57,7 +59,10 @@ let passwordInitialized = false
 
 const refreshPassword = () => {
   generatedPassword.value = generatePassword()
-  if (passwordInitialized) addHistory('密码生成', generatedPassword.value)
+  // 隐私优先：只记录生成参数，密码明文不落 localStorage
+  if (passwordInitialized && generatedPassword.value) {
+    addHistory('密码生成', `已生成 ${generatedPassword.value.length} 位密码（明文未记录）`)
+  }
   passwordInitialized = true
 }
 
@@ -291,7 +296,7 @@ h2 {
   color: #666;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   background-color: #2a2a2a;
   border-color: #4a2a2a;
   color: #a0c0e0;
@@ -331,7 +336,7 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark'] .input-group label) {
+:root[data-theme='dark'] .input-group label {
   color: #e0e0e0;
 }
 
@@ -345,8 +350,8 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark'] .input-field),
-:global([data-theme='dark'] .slider) {
+:root[data-theme='dark'] .input-field,
+:root[data-theme='dark'] .slider {
   background-color: #1a1a2a;
   border-color: #4a2a2a;
   color: #e0e0e0;
@@ -380,7 +385,7 @@ h2 {
   justify-content: space-between;
 }
 
-:global([data-theme='dark'] .uuid-item) {
+:root[data-theme='dark'] .uuid-item {
   background: #2a2a2a;
 }
 
@@ -407,7 +412,7 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark'] .checkbox-group label) {
+:root[data-theme='dark'] .checkbox-group label {
   color: #a0c0e0;
 }
 
@@ -437,7 +442,7 @@ h2 {
   word-break: break-all;
 }
 
-:global([data-theme='dark'] .password-value) {
+:root[data-theme='dark'] .password-value {
   background: #2a1a1a;
   border-color: #ff6b6b;
 }
@@ -456,7 +461,7 @@ h2 {
   transition: border-color 0.3s;
 }
 
-:global([data-theme='dark'] .input-textarea) {
+:root[data-theme='dark'] .input-textarea {
   background-color: #1a1a2a;
   border-color: #4a2a2a;
   color: #e0e0e0;
@@ -483,7 +488,7 @@ h2 {
   text-align: center;
 }
 
-:global([data-theme='dark'] .stat-box) {
+:root[data-theme='dark'] .stat-box {
   background: linear-gradient(135deg, #2a1a1a, #3a2a2a);
   border-color: #ff6b6b;
 }
@@ -494,7 +499,7 @@ h2 {
   margin-bottom: 0.5rem;
 }
 
-:global([data-theme='dark'] .stat-label) {
+:root[data-theme='dark'] .stat-label {
   color: #a0c0e0;
 }
 
@@ -531,7 +536,7 @@ h2 {
   resize: vertical;
 }
 
-:global([data-theme='dark'] .output-textarea) {
+:root[data-theme='dark'] .output-textarea {
   background-color: #2a2a2a;
   border-color: #4a2a2a;
   color: #e0e0e0;
@@ -564,7 +569,7 @@ h2 {
   flex: 1;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #2a2a2a;
   color: #e0e0e0;
 }
@@ -573,7 +578,7 @@ h2 {
   background-color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #3a3a3a;
 }
 
@@ -588,7 +593,7 @@ h2 {
   transition: all 0.2s;
 }
 
-:global([data-theme='dark'] .btn-copy) {
+:root[data-theme='dark'] .btn-copy {
   background-color: #1a1a2a;
 }
 
@@ -617,19 +622,19 @@ h2 {
 }
 
 /* Dark mode overrides */
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0c0e0;
 }
 
-:global([data-theme='dark'] .uuid-item code) {
+:root[data-theme='dark'] .uuid-item code {
   color: #ff8fa3;
 }
 
-:global([data-theme='dark'] .slider) {
+:root[data-theme='dark'] .slider {
   accent-color: #ff6b6b;
 }
 </style>

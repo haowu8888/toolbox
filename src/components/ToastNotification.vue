@@ -95,15 +95,15 @@ const { toasts, removeToast } = useToast()
   transition: transform 0.3s ease;
 }
 
-:global([data-theme='dark']) .toast-success {
+:root[data-theme='dark'] .toast-success {
   background: rgba(56, 142, 60, 0.95);
 }
 
-:global([data-theme='dark']) .toast-error {
+:root[data-theme='dark'] .toast-error {
   background: rgba(211, 47, 47, 0.95);
 }
 
-:global([data-theme='dark']) .toast-info {
+:root[data-theme='dark'] .toast-info {
   background: rgba(25, 118, 210, 0.95);
 }
 </style>

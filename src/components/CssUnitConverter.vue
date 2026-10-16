@@ -15,16 +15,25 @@ const inputUnit = ref('px')
 
 const units = ['px', 'rem', 'em', 'vw', 'vh', '%']
 
+// 基准值被清空或填 0 时退回默认值，避免除以 0 显示 Infinity
+const positiveOr = (value, fallback) => {
+  const num = Number(value)
+  return Number.isFinite(num) && num > 0 ? num : fallback
+}
+const baseFont = computed(() => positiveOr(rootFontSize.value, 16))
+const baseVw = computed(() => positiveOr(viewportWidth.value, 1920))
+const baseVh = computed(() => positiveOr(viewportHeight.value, 1080))
+
 const toPx = (value, unit) => {
   const v = parseFloat(value)
   if (isNaN(v)) return NaN
   switch (unit) {
     case 'px': return v
     case 'rem':
-    case 'em': return v * rootFontSize.value
-    case 'vw': return (v * viewportWidth.value) / 100
-    case 'vh': return (v * viewportHeight.value) / 100
-    case '%': return (v * rootFontSize.value) / 100
+    case 'em': return v * baseFont.value
+    case 'vw': return (v * baseVw.value) / 100
+    case 'vh': return (v * baseVh.value) / 100
+    case '%': return (v * baseFont.value) / 100
     default: return NaN
   }
 }
@@ -34,16 +43,16 @@ const fromPx = (px, unit) => {
   switch (unit) {
     case 'px': return px
     case 'rem':
-    case 'em': return px / rootFontSize.value
-    case 'vw': return (px / viewportWidth.value) * 100
-    case 'vh': return (px / viewportHeight.value) * 100
-    case '%': return (px / rootFontSize.value) * 100
+    case 'em': return px / baseFont.value
+    case 'vw': return (px / baseVw.value) * 100
+    case 'vh': return (px / baseVh.value) * 100
+    case '%': return (px / baseFont.value) * 100
     default: return ''
   }
 }
 
 const formatValue = (val) => {
-  if (val === '' || isNaN(val)) return '-'
+  if (val === '' || !Number.isFinite(Number(val))) return '-'
   const num = parseFloat(val)
   if (Number.isInteger(num)) return num.toString()
   return parseFloat(num.toFixed(4)).toString()
@@ -51,7 +60,7 @@ const formatValue = (val) => {
 
 const conversions = computed(() => {
   const v = parseFloat(inputValue.value)
-  if (!inputValue.value || isNaN(v)) return []
+  if (inputValue.value === '' || inputValue.value === null || isNaN(v)) return []
   const px = toPx(v, inputUnit.value)
   if (isNaN(px)) return []
   return units
@@ -68,7 +77,7 @@ const commonPxValues = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 64]
 const referenceTable = computed(() => {
   return commonPxValues.map(px => ({
     px,
-    rem: formatValue(px / rootFontSize.value)
+    rem: formatValue(px / baseFont.value)
   }))
 })
 
@@ -412,107 +421,107 @@ h2 {
 }
 
 /* Dark mode */
-:global([data-theme='dark'] .css-unit-converter h2) {
+:root[data-theme='dark'] .css-unit-converter h2 {
   color: #90a4ae;
 }
 
-:global([data-theme='dark'] .css-unit-converter .description) {
+:root[data-theme='dark'] .css-unit-converter .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .css-unit-converter .section) {
+:root[data-theme='dark'] .css-unit-converter .section {
   background: #1e1e2e;
   border-color: #3a3a4e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .section-title) {
+:root[data-theme='dark'] .css-unit-converter .section-title {
   color: #b0bec5;
 }
 
-:global([data-theme='dark'] .css-unit-converter .section-hint) {
+:root[data-theme='dark'] .css-unit-converter .section-hint {
   color: #78909c;
 }
 
-:global([data-theme='dark'] .css-unit-converter .setting-item label) {
+:root[data-theme='dark'] .css-unit-converter .setting-item label {
   color: #90a4ae;
 }
 
-:global([data-theme='dark'] .css-unit-converter .setting-input-wrap) {
+:root[data-theme='dark'] .css-unit-converter .setting-input-wrap {
   background: #2a2a3e;
   border-color: #4a4a5e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .setting-input-wrap:focus-within) {
+:root[data-theme='dark'] .css-unit-converter .setting-input-wrap:focus-within {
   border-color: #90a4ae;
   box-shadow: 0 0 0 3px rgba(144, 164, 174, 0.1);
 }
 
-:global([data-theme='dark'] .css-unit-converter .setting-input) {
+:root[data-theme='dark'] .css-unit-converter .setting-input {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .css-unit-converter .setting-unit) {
+:root[data-theme='dark'] .css-unit-converter .setting-unit {
   background: #3a3a4e;
   color: #90a4ae;
 }
 
-:global([data-theme='dark'] .css-unit-converter .input-field),
-:global([data-theme='dark'] .css-unit-converter .select-field) {
+:root[data-theme='dark'] .css-unit-converter .input-field,
+:root[data-theme='dark'] .css-unit-converter .select-field {
   background: #2a2a3e;
   color: #e0e0e0;
   border-color: #4a4a5e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .input-field:focus),
-:global([data-theme='dark'] .css-unit-converter .select-field:focus) {
+:root[data-theme='dark'] .css-unit-converter .input-field:focus,
+:root[data-theme='dark'] .css-unit-converter .select-field:focus {
   border-color: #90a4ae;
   box-shadow: 0 0 0 3px rgba(144, 164, 174, 0.1);
 }
 
-:global([data-theme='dark'] .css-unit-converter .result-card) {
+:root[data-theme='dark'] .css-unit-converter .result-card {
   background: #2a2a3e;
   border-color: #4a4a5e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .result-card:hover) {
+:root[data-theme='dark'] .css-unit-converter .result-card:hover {
   border-color: #90a4ae;
   background: #333348;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-:global([data-theme='dark'] .css-unit-converter .result-value) {
+:root[data-theme='dark'] .css-unit-converter .result-value {
   color: #90a4ae;
 }
 
-:global([data-theme='dark'] .css-unit-converter .result-unit) {
+:root[data-theme='dark'] .css-unit-converter .result-unit {
   color: #78909c;
 }
 
-:global([data-theme='dark'] .css-unit-converter .results-placeholder) {
+:root[data-theme='dark'] .css-unit-converter .results-placeholder {
   color: #546e7a;
 }
 
-:global([data-theme='dark'] .css-unit-converter .ref-table) {
+:root[data-theme='dark'] .css-unit-converter .ref-table {
   border-color: #4a4a5e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .ref-header) {
+:root[data-theme='dark'] .css-unit-converter .ref-header {
   background: #455a64;
 }
 
-:global([data-theme='dark'] .css-unit-converter .ref-row) {
+:root[data-theme='dark'] .css-unit-converter .ref-row {
   border-top-color: #3a3a4e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .ref-row:hover) {
+:root[data-theme='dark'] .css-unit-converter .ref-row:hover {
   background: #2a2a3e;
 }
 
-:global([data-theme='dark'] .css-unit-converter .ref-cell) {
+:root[data-theme='dark'] .css-unit-converter .ref-cell {
   color: #b0bec5;
 }
 
-:global([data-theme='dark'] .css-unit-converter .ref-cell:hover) {
+:root[data-theme='dark'] .css-unit-converter .ref-cell:hover {
   color: #e0e0e0;
   background: #333348;
 }

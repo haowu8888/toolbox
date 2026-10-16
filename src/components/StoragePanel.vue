@@ -45,7 +45,7 @@ const filteredHistory = computed(() => {
     const q = hSearch.value.trim().toLowerCase()
     list = list.filter(i =>
       String(i.type || '').toLowerCase().includes(q) ||
-      (i.value && i.value.toLowerCase().includes(q))
+      String(i.value ?? '').toLowerCase().includes(q)
     )
   }
   return list
@@ -60,6 +60,8 @@ const pagedHistory = computed(() => {
 
 // 筛选条件变化时回到第 1 页
 watch([hSearch, hTypeFilter, historyPageSize], () => { historyPage.value = 1 })
+// 删除最后一页的最后一条后，页码可能超出范围，夹回最后一页
+watch(historyTotalPages, (total) => { if (historyPage.value > total) historyPage.value = total })
 
 const setHistoryPage = (p) => {
   if (p >= 1 && p <= historyTotalPages.value) historyPage.value = p
@@ -85,8 +87,8 @@ const filteredFavorites = computed(() => {
     const q = fSearch.value.trim().toLowerCase()
     list = list.filter(i =>
       String(i.type || '').toLowerCase().includes(q) ||
-      (i.name && i.name.toLowerCase().includes(q)) ||
-      (i.value && i.value.toLowerCase().includes(q))
+      String(i.name ?? '').toLowerCase().includes(q) ||
+      String(i.value ?? '').toLowerCase().includes(q)
     )
   }
   return list
@@ -100,6 +102,7 @@ const pagedFavorites = computed(() => {
 })
 
 watch([fSearch, fTypeFilter, favoritePageSize], () => { favoritePage.value = 1 })
+watch(favoriteTotalPages, (total) => { if (favoritePage.value > total) favoritePage.value = total })
 
 const setFavoritePage = (p) => {
   if (p >= 1 && p <= favoriteTotalPages.value) favoritePage.value = p
@@ -805,158 +808,158 @@ h2 {
 }
 
 /* ========== Dark mode ========== */
-:global([data-theme='dark']) .storage-panel h2 {
+:root[data-theme='dark'] .storage-panel h2 {
   color: #6edddd;
 }
 
-:global([data-theme='dark']) .description {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .tab-btn {
+:root[data-theme='dark'] .tab-btn {
   border-color: #446677;
   background-color: #2a2a3e;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .tab-btn:hover {
+:root[data-theme='dark'] .tab-btn:hover {
   border-color: #6edddd;
   color: #6edddd;
 }
 
-:global([data-theme='dark']) .tab-btn.active {
+:root[data-theme='dark'] .tab-btn.active {
   background-color: #4ecdc4;
   color: white;
 }
 
-:global([data-theme='dark']) .filter-input,
-:global([data-theme='dark']) .filter-select {
+:root[data-theme='dark'] .filter-input,
+:root[data-theme='dark'] .filter-select {
   background-color: #2a2a3e;
   border-color: #444;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .filter-input:focus,
-:global([data-theme='dark']) .filter-select:focus {
+:root[data-theme='dark'] .filter-input:focus,
+:root[data-theme='dark'] .filter-select:focus {
   border-color: #6edddd;
 }
 
-:global([data-theme='dark']) .filter-input::placeholder {
+:root[data-theme='dark'] .filter-input::placeholder {
   color: #666;
 }
 
-:global([data-theme='dark']) .filter-reset {
+:root[data-theme='dark'] .filter-reset {
   background-color: #2a2a3e;
   border-color: #444;
   color: #888;
 }
 
-:global([data-theme='dark']) .filter-reset:hover {
+:root[data-theme='dark'] .filter-reset:hover {
   border-color: #ff6b6b;
   color: #ff6b6b;
   background-color: #3a2a2a;
 }
 
-:global([data-theme='dark']) .filter-result-hint {
+:root[data-theme='dark'] .filter-result-hint {
   color: #6edddd;
 }
 
-:global([data-theme='dark']) .empty-state {
+:root[data-theme='dark'] .empty-state {
   background: linear-gradient(135deg, #2a3a4a, #2a2a3e);
   border-color: #446677;
 }
 
-:global([data-theme='dark']) .empty-state p {
+:root[data-theme='dark'] .empty-state p {
   color: #707070;
 }
 
-:global([data-theme='dark']) .list-item {
+:root[data-theme='dark'] .list-item {
   background: #2a2a3e;
   border-color: #444;
 }
 
-:global([data-theme='dark']) .list-item:hover {
+:root[data-theme='dark'] .list-item:hover {
   border-color: #6edddd;
   box-shadow: 0 2px 8px rgba(110, 221, 221, 0.2);
 }
 
-:global([data-theme='dark']) .item-value {
+:root[data-theme='dark'] .item-value {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .item-time {
+:root[data-theme='dark'] .item-time {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .page-info,
-:global([data-theme='dark']) .page-size-control {
+:root[data-theme='dark'] .page-info,
+:root[data-theme='dark'] .page-size-control {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .page-size-select {
+:root[data-theme='dark'] .page-size-select {
   background-color: #2a2a3e;
   border-color: #444;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .page-size-select:focus {
+:root[data-theme='dark'] .page-size-select:focus {
   border-color: #6edddd;
 }
 
-:global([data-theme='dark']) .btn-action {
+:root[data-theme='dark'] .btn-action {
   border-color: #444;
   background-color: #333;
 }
 
-:global([data-theme='dark']) .btn-action:hover {
+:root[data-theme='dark'] .btn-action:hover {
   border-color: #6edddd;
   background-color: #3a3a4e;
 }
 
-:global([data-theme='dark']) .btn-action.btn-delete:hover,
-:global([data-theme='dark']) .btn-action.btn-delete.confirm-delete {
+:root[data-theme='dark'] .btn-action.btn-delete:hover,
+:root[data-theme='dark'] .btn-action.btn-delete.confirm-delete {
   border-color: #ff6b6b;
   background-color: #3a2a2a;
 }
 
-:global([data-theme='dark']) .btn-action.btn-star {
+:root[data-theme='dark'] .btn-action.btn-star {
   color: #666;
 }
 
-:global([data-theme='dark']) .btn-action.btn-star:hover {
+:root[data-theme='dark'] .btn-action.btn-star:hover {
   border-color: #ffa502;
   background-color: #3a3520;
   color: #ffa502;
 }
 
-:global([data-theme='dark']) .btn-action.btn-star.is-favorited {
+:root[data-theme='dark'] .btn-action.btn-star.is-favorited {
   color: #ffa502;
   border-color: #ffa502;
   background-color: #3a3520;
 }
 
-:global([data-theme='dark']) .page-btn {
+:root[data-theme='dark'] .page-btn {
   border-color: #444;
   background-color: #2a2a3e;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark']) .page-btn:hover:not(:disabled) {
+:root[data-theme='dark'] .page-btn:hover:not(:disabled) {
   border-color: #6edddd;
   color: #6edddd;
 }
 
-:global([data-theme='dark']) .page-btn.active {
+:root[data-theme='dark'] .page-btn.active {
   background-color: #4ecdc4;
   color: white;
   border-color: #4ecdc4;
 }
 
-:global([data-theme='dark']) .page-btn:disabled {
+:root[data-theme='dark'] .page-btn:disabled {
   opacity: 0.25;
 }
 
-:global([data-theme='dark']) .page-dots {
+:root[data-theme='dark'] .page-dots {
   color: #666;
 }
 </style>

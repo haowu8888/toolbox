@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, onActivated, onDeactivated, onMounted, onUnmounted } from 'vue'
 import QRCode from 'qrcode'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
@@ -9,6 +9,11 @@ import { downloadDataUrl } from '../utils/download'
 const QR_DEBOUNCE_MS = 300
 const QR_IMAGE_WIDTH = 300
 const CANVAS_CONTEXT_OPTIONS = { willReadFrequently: true }
+// 手机照片动辄 4000px，jsQR 在 ~1600px 内识别更快也更稳
+const MAX_SCAN_DIMENSION = 1600
+// 依次尝试的容错等级：内容过长时自动降级以容纳更多数据
+const ERROR_CORRECTION_LEVELS = ['H', 'Q', 'M', 'L']
+const LEVEL_NAMES = { H: '高 (30%)', Q: '较高 (25%)', M: '中 (15%)', L: '低 (7%)' }
 const nativeScanSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window
 
 const { showToast } = useToast()
@@ -29,30 +34,56 @@ const error = ref('')
 const scanResult = ref('')
 const scanPreview = ref('')
 const scanSupported = ref(true)
+const errorCorrectionLevel = ref('')
 
 let qrDebounceTimer = null
+// 每次生成递增，丢弃过期的异步结果（例如生成过程中输入被清空）
+let qrGeneration = 0
 
-watch(inputValue, (newValue) => {
-  if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
-  if (!newValue.trim()) {
-    qrCodeUrl.value = ''
-    error.value = ''
-    return
-  }
+const isCapacityError = (err) => /too big|amount of data/i.test(String(err?.message))
 
-  qrDebounceTimer = setTimeout(async () => {
+const generateQrDataUrl = async (text) => {
+  for (const level of ERROR_CORRECTION_LEVELS) {
     try {
-      error.value = ''
-      qrCodeUrl.value = await QRCode.toDataURL(newValue, {
-        errorCorrectionLevel: 'H',
+      const url = await QRCode.toDataURL(text, {
+        errorCorrectionLevel: level,
         type: 'image/png',
         quality: 0.95,
         margin: 1,
         width: QR_IMAGE_WIDTH,
       })
+      return { url, level }
     } catch (err) {
-      error.value = '生成二维码失败：' + err.message
+      if (!isCapacityError(err) || level === 'L') throw err
+    }
+  }
+  throw new Error('unreachable')
+}
+
+watch(inputValue, (newValue) => {
+  if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
+  const generation = ++qrGeneration
+  if (!newValue.trim()) {
+    qrCodeUrl.value = ''
+    error.value = ''
+    errorCorrectionLevel.value = ''
+    return
+  }
+
+  qrDebounceTimer = setTimeout(async () => {
+    try {
+      const { url, level } = await generateQrDataUrl(newValue)
+      if (generation !== qrGeneration) return
+      error.value = ''
+      qrCodeUrl.value = url
+      errorCorrectionLevel.value = level
+    } catch (err) {
+      if (generation !== qrGeneration) return
+      error.value = isCapacityError(err)
+        ? `内容过长（${new TextEncoder().encode(newValue).length} 字节），超出二维码最大容量，请精简内容`
+        : '生成二维码失败：' + err.message
       qrCodeUrl.value = ''
+      errorCorrectionLevel.value = ''
     }
   }, QR_DEBOUNCE_MS)
 })
@@ -80,8 +111,11 @@ const detectWithBarcodeDetector = async (img) => {
 const detectWithJsQr = async (img) => {
   const jsQR = await loadJsQr()
   const canvas = document.createElement('canvas')
-  const width = img.naturalWidth || img.width
-  const height = img.naturalHeight || img.height
+  const sourceWidth = img.naturalWidth || img.width
+  const sourceHeight = img.naturalHeight || img.height
+  const scale = Math.min(1, MAX_SCAN_DIMENSION / Math.max(sourceWidth, sourceHeight))
+  const width = Math.max(1, Math.round(sourceWidth * scale))
+  const height = Math.max(1, Math.round(sourceHeight * scale))
   canvas.width = width
   canvas.height = height
 
@@ -120,10 +154,38 @@ const clearInput = () => {
 }
 
 const handleScanFile = async (event) => {
-  const file = event.target.files?.[0]
+  const input = event.target
+  const file = input.files?.[0]
+  // 清空 value，允许再次选择同一张图片
+  input.value = ''
   if (!file) return
   await scanImage(file)
 }
+
+// 识别模式下支持直接 Ctrl+V 粘贴截图
+const handlePaste = async (event) => {
+  if (activeMode.value !== 'scan') return
+  const file = [...(event.clipboardData?.files ?? [])].find((item) => item.type.startsWith('image/'))
+  if (!file) return
+  event.preventDefault()
+  await scanImage(file)
+}
+
+let pasteListening = false
+const listenPaste = () => {
+  if (pasteListening) return
+  window.addEventListener('paste', handlePaste)
+  pasteListening = true
+}
+const unlistenPaste = () => {
+  if (!pasteListening) return
+  window.removeEventListener('paste', handlePaste)
+  pasteListening = false
+}
+
+onMounted(listenPaste)
+onActivated(listenPaste)
+onDeactivated(unlistenPaste)
 
 const handleDrop = async (event) => {
   event.preventDefault()
@@ -168,6 +230,7 @@ const clearScan = () => {
 }
 
 onUnmounted(() => {
+  unlistenPaste()
   revokePreviewUrl()
   if (qrDebounceTimer) clearTimeout(qrDebounceTimer)
 })
@@ -194,12 +257,13 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
       <div v-if="qrCodeUrl" class="output-section">
         <div class="qr-display">
           <img :src="qrCodeUrl" alt="QR Code" class="qr-image" />
         </div>
+        <p v-if="errorCorrectionLevel" class="qr-meta">容错等级：{{ LEVEL_NAMES[errorCorrectionLevel] }}</p>
         <button @click="downloadQRCode" class="btn btn-primary">下载二维码</button>
       </div>
 
@@ -214,7 +278,7 @@ onUnmounted(() => {
       <div class="drop-zone" @drop="handleDrop" @dragover="handleDragOver">
         <div class="drop-content">
           <span class="drop-icon">📷</span>
-          <p>拖拽图片到这里，或点击上传</p>
+          <p>拖拽图片到这里、直接 Ctrl+V 粘贴截图，或点击上传</p>
           <label class="btn btn-primary upload-label">
             选择图片
             <input type="file" accept="image/*" @change="handleScanFile" style="display: none" />
@@ -334,6 +398,12 @@ h2 {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.qr-meta {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-3);
+}
+
 .qr-image {
   display: block;
   max-width: 100%;
@@ -371,41 +441,41 @@ h2 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #5ec89f;
 }
 
-:global([data-theme='dark'] .input-textarea) {
+:root[data-theme='dark'] .input-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #444;
 }
 
-:global([data-theme='dark'] .input-textarea:focus) {
+:root[data-theme='dark'] .input-textarea:focus {
   border-color: #5ec89f;
   box-shadow: 0 0 0 3px rgba(94, 200, 159, 0.1);
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .error-message) {
+:root[data-theme='dark'] .error-message {
   background-color: #4a2a2a;
   color: #ff6b6b;
   border-left-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .generating) {
+:root[data-theme='dark'] .generating {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .qr-display) {
+:root[data-theme='dark'] .qr-display {
   background: #333;
 }
 
@@ -525,53 +595,53 @@ h2 {
 }
 
 /* Dark mode for scan elements */
-:global([data-theme='dark'] .mode-btn) {
+:root[data-theme='dark'] .mode-btn {
   background: #2a2a3e;
   border-color: #444;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .mode-btn:hover) {
+:root[data-theme='dark'] .mode-btn:hover {
   border-color: #5ec89f;
   color: #5ec89f;
 }
 
-:global([data-theme='dark'] .mode-btn.active) {
+:root[data-theme='dark'] .mode-btn.active {
   background: #42b883;
   color: white;
   border-color: #42b883;
 }
 
-:global([data-theme='dark'] .warning-message) {
+:root[data-theme='dark'] .warning-message {
   background-color: #4a3a1a;
   color: #ffd54f;
   border-left-color: #ffd54f;
 }
 
-:global([data-theme='dark'] .drop-zone) {
+:root[data-theme='dark'] .drop-zone {
   border-color: #555;
   background: #2a2a3e;
 }
 
-:global([data-theme='dark'] .drop-zone:hover) {
+:root[data-theme='dark'] .drop-zone:hover {
   border-color: #5ec89f;
   background: #2a3e35;
 }
 
-:global([data-theme='dark'] .drop-content p) {
+:root[data-theme='dark'] .drop-content p {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .scan-result) {
+:root[data-theme='dark'] .scan-result {
   background: #2a3e35;
   border-color: #5ec89f;
 }
 
-:global([data-theme='dark'] .scan-result h3) {
+:root[data-theme='dark'] .scan-result h3 {
   color: #5ec89f;
 }
 
-:global([data-theme='dark'] .result-text) {
+:root[data-theme='dark'] .result-text {
   background: #2a2a3e;
   color: #e0e0e0;
 }

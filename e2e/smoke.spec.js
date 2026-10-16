@@ -153,7 +153,7 @@ const smokeActions = {
   },
   convert: async (page) => {
     await page.locator('.convert-tools input[placeholder="输入数值"]').first().fill('1000')
-    await expect(page.locator('.convert-tools .result-field').first()).toHaveText('1.000000')
+    await expect(page.locator('.convert-tools .result-field').first()).toHaveText('1')
   },
   color: async (page) => {
     const hex = await page.getByLabel('HEX 输入').inputValue()

@@ -6,6 +6,10 @@ import { useHistory } from '../composables/useStorage'
 import { useClipboard } from '../composables/useClipboard'
 import { downloadDataUrl, downloadText } from '../utils/download'
 import { formatBytes, truncate } from '../utils/format'
+import { extensionForMime, mimeFromDataUrl, toImageDataUrl } from '../utils/imageDataUrl'
+
+// MD5 依赖 crypto-js 需整块读入内存，过大的文件会让标签页崩溃
+const MAX_HASH_FILE_BYTES = 512 * 1024 * 1024
 
 const { showToast } = useToast()
 const { addHistory } = useHistory()
@@ -31,6 +35,7 @@ const hashResult = ref('')
 // 图片转 Base64
 const handleImageSelect = (e) => {
   const file = e.target.files?.[0]
+  e.target.value = ''
   if (!file) return
 
   if (!file.type.startsWith('image/')) {
@@ -48,22 +53,28 @@ const handleImageSelect = (e) => {
 
 // Base64 转图片
 const displayBase64Image = () => {
-  if (!base64Input.value.trim().startsWith('data:image')) {
-    showToast('请输入有效的 Base64 图片数据（应以 data:image 开头）', 'error')
-    return
+  try {
+    imagePreview.value = toImageDataUrl(base64Input.value).dataUrl
+  } catch (err) {
+    imagePreview.value = ''
+    showToast(err.message, 'error')
   }
-  imagePreview.value = base64Input.value
+}
+
+const onPreviewError = () => {
+  if (toolType.value !== 'base64-image') return
+  imagePreview.value = ''
+  showToast('图片数据已损坏或格式不受支持', 'error')
 }
 
 const copyToClipboard = (text) => copyText(text, { history: ['文件工具', truncate(text, 100)] })
 
 const downloadBase64Image = () => {
-  if (!imageInput.value) {
-    showToast('请先选择或输入图片', 'info')
+  if (!imagePreview.value) {
+    showToast('请先输入并显示图片', 'info')
     return
   }
-
-  downloadDataUrl(imageInput.value, 'image.png')
+  downloadDataUrl(imagePreview.value, `image.${extensionForMime(mimeFromDataUrl(imagePreview.value))}`)
 }
 
 const downloadImageAsBase64 = () => {
@@ -78,7 +89,12 @@ const downloadImageAsBase64 = () => {
 // 文件哈希计算
 const handleFileSelect = (e) => {
   const file = e.target.files?.[0]
+  e.target.value = ''
   if (!file) return
+  if (file.size > MAX_HASH_FILE_BYTES) {
+    showToast(`文件过大（${formatBytes(file.size)}），最多支持 ${formatBytes(MAX_HASH_FILE_BYTES)}`, 'error')
+    return
+  }
 
   const reader = new FileReader()
   reader.onload = async (event) => {
@@ -178,14 +194,14 @@ const clearAll = () => {
     <div v-else-if="toolType === 'base64-image'" class="tool-section">
       <textarea
         v-model="base64Input"
-        placeholder="粘贴 Base64 图片数据（应以 data:image 开头）..."
+        placeholder="粘贴 Base64 图片数据（data:image/... 或纯 Base64 均可）..."
         class="input-textarea"
       ></textarea>
       <button @click="displayBase64Image" class="btn btn-primary">🖼️ 显示图片</button>
 
       <div v-if="imagePreview" class="preview-section">
         <div class="image-preview">
-          <img :src="imagePreview" alt="Preview" class="preview-img" />
+          <img :src="imagePreview" alt="Preview" class="preview-img" @error="onPreviewError" />
         </div>
         <button @click="downloadBase64Image" class="btn btn-primary">💾 下载图片</button>
       </div>
@@ -256,7 +272,7 @@ h2 {
   color: #666;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   background-color: #2a2a2a;
   border-color: #3a5a3a;
   color: #a0c0e0;
@@ -290,7 +306,7 @@ h2 {
   text-align: center;
 }
 
-:global([data-theme='dark'] .upload-section) {
+:root[data-theme='dark'] .upload-section {
   background: linear-gradient(135deg, #1a2a1a, #1a2a2a);
   border-color: #5ec89f;
 }
@@ -319,7 +335,7 @@ h2 {
   font-size: 0.9rem;
 }
 
-:global([data-theme='dark'] .hint) {
+:root[data-theme='dark'] .hint {
   color: #a0c0e0;
 }
 
@@ -331,7 +347,7 @@ h2 {
   margin-top: 1.5rem;
 }
 
-:global([data-theme='dark'] .preview-section) {
+:root[data-theme='dark'] .preview-section {
   background: #2a2a2a;
   border-color: #3a5a3a;
 }
@@ -348,7 +364,7 @@ h2 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-:global([data-theme='dark'] .preview-img) {
+:root[data-theme='dark'] .preview-img {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -363,7 +379,7 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark'] .base64-label) {
+:root[data-theme='dark'] .base64-label {
   color: #e0e0e0;
 }
 
@@ -380,7 +396,7 @@ h2 {
   resize: vertical;
 }
 
-:global([data-theme='dark'] .base64-textarea) {
+:root[data-theme='dark'] .base64-textarea {
   background: #1a1a2a;
   border-color: #3a5a3a;
   color: #e0e0e0;
@@ -400,7 +416,7 @@ h2 {
   transition: border-color 0.3s;
 }
 
-:global([data-theme='dark'] .input-textarea) {
+:root[data-theme='dark'] .input-textarea {
   background: #1a1a2a;
   border-color: #3a5a3a;
   color: #e0e0e0;
@@ -420,7 +436,7 @@ h2 {
   margin-top: 1.5rem;
 }
 
-:global([data-theme='dark'] .result-section) {
+:root[data-theme='dark'] .result-section {
   background: #2a2a2a;
   border-color: #3a5a3a;
 }
@@ -439,7 +455,7 @@ h2 {
   overflow-y: auto;
 }
 
-:global([data-theme='dark'] .result-text) {
+:root[data-theme='dark'] .result-text {
   background: #1a1a2a;
   color: #e0e0e0;
 }
@@ -477,7 +493,7 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background: #2a2a2a;
   color: #e0e0e0;
 }
@@ -486,7 +502,7 @@ h2 {
   background: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background: #3a3a3a;
 }
 
@@ -505,11 +521,11 @@ h2 {
 }
 
 /* Dark mode overrides */
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #5ec89f;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0c0e0;
 }
 </style>

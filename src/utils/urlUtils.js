@@ -1,16 +1,18 @@
+// 带 "//" 的层级型 scheme（https://、ftp://、chrome-extension:// ……）
+const HIERARCHICAL_SCHEME = /^[a-z][a-z\d+.-]*:\/\//i
+// 合法但不带 "//" 的常见 scheme；其余 "xxx:" 前缀视为 host:port，例如 localhost:3000
+const OPAQUE_SCHEME = /^(?:mailto|tel|sms|data|blob|about|javascript|urn|magnet|file):/i
+
 export const safeParseUrl = (raw) => {
   const value = String(raw || '').trim()
   if (!value) return { url: null, error: '' }
 
+  // 兼容用户输入 host/path、host:port（无协议）形式
+  const candidate = HIERARCHICAL_SCHEME.test(value) || OPAQUE_SCHEME.test(value) ? value : `https://${value}`
   try {
-    return { url: new URL(value), error: '' }
-  } catch {
-    // 兼容用户输入 host/path（无协议）形式
-    try {
-      return { url: new URL(`https://${value}`), error: '' }
-    } catch (err2) {
-      return { url: null, error: err2?.message || 'URL 解析失败' }
-    }
+    return { url: new URL(candidate), error: '' }
+  } catch (err) {
+    return { url: null, error: err?.message || 'URL 解析失败' }
   }
 }
 

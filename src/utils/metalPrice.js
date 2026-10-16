@@ -86,26 +86,24 @@ export const fetchRealtimeSnapshot = async ({
   fetchImpl = fetch,
   symbols = METAL_DEFS.map((item) => item.symbol),
 } = {}) => {
-  let usdToCnyRate = null
-  let exchangeRateError = ''
+  // 汇率与各金属报价并行请求，首屏少等一个往返
+  const [rateResult, ...priceResults] = await Promise.allSettled([
+    fetchUsdToCnyRate({ fetchImpl }),
+    ...symbols.map((symbol) => fetchJson(`${GOLD_API_BASE}/${symbol}`, { fetchImpl })),
+  ])
 
-  try {
-    usdToCnyRate = await fetchUsdToCnyRate({ fetchImpl })
-  } catch (error) {
-    exchangeRateError = toErrorMessage(error)
-  }
+  const usdToCnyRate = rateResult.status === 'fulfilled' ? rateResult.value : null
+  const exchangeRateError = rateResult.status === 'rejected' ? toErrorMessage(rateResult.reason) : ''
 
-  const items = await Promise.all(
-    symbols.map(async (symbol) => {
-      try {
-        const metalDef = getMetalDef(symbol)
-        const payload = await fetchJson(`${GOLD_API_BASE}/${symbol}`, { fetchImpl })
-        return normalizeRealtimeItem(payload, usdToCnyRate, metalDef)
-      } catch (error) {
-        return buildErrorItem(symbol, error)
-      }
-    }),
-  )
+  const items = symbols.map((symbol, index) => {
+    const result = priceResults[index]
+    try {
+      if (result.status === 'rejected') throw result.reason
+      return normalizeRealtimeItem(result.value, usdToCnyRate, getMetalDef(symbol))
+    } catch (error) {
+      return buildErrorItem(symbol, error)
+    }
+  })
 
   return {
     updatedAt: new Date().toISOString(),

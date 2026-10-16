@@ -41,7 +41,9 @@ const loadCustomTemplates = () => {
 }
 
 const saveCustomTemplates = () => {
-  writeStorageJson(STORAGE_KEYS.lotteryTemplates, customTemplates.value)
+  if (!writeStorageJson(STORAGE_KEYS.lotteryTemplates, customTemplates.value)) {
+    showToast('模板保存失败：浏览器存储空间不足或不可用', 'error', 5000)
+  }
 }
 
 const addCustomTemplate = () => {
@@ -140,7 +142,35 @@ const newItemName = ref('')
 const newItemWeight = ref(1)
 const newItemLimit = ref(0)
 
-const totalWeight = computed(() => weightedItems.value.reduce((s, i) => s + i.weight, 0))
+// 本轮已抽中次数（按奖品名），用于执行"数量限制"；重置库存时清零
+const wonCounts = ref({})
+
+// 行内输入框清空时 v-model.number 会给出 ''，直接相加会变成字符串拼接
+const weightOf = (item) => {
+  const value = Number(item.weight)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+const wonOf = (item) => wonCounts.value[item.name] || 0
+const isExhausted = (item) => item.limit > 0 && wonOf(item) >= item.limit
+// 抽完的奖品不再参与抽奖，也不再占转盘面积
+const effectiveWeight = (item) => (isExhausted(item) ? 0 : weightOf(item))
+const hasWonPrizes = computed(() => Object.values(wonCounts.value).some((n) => n > 0))
+
+const totalWeight = computed(() => weightedItems.value.reduce((sum, item) => sum + effectiveWeight(item), 0))
+
+const limitLabel = (item) => {
+  if (!item.limit) return '不限'
+  return isExhausted(item) ? `已抽完 (${item.limit})` : `剩 ${item.limit - wonOf(item)}/${item.limit}`
+}
+
+const resetPrizeStock = () => {
+  wonCounts.value = {}
+  advancedWinnerIndex.value = -1
+  advancedResult.value = []
+  frozenAdvancedSegments = null
+  nextTick(() => scheduleRedraw('advanced'))
+  showToast('库存已重置')
+}
 
 const addWeightedItem = () => {
   const name = newItemName.value.trim()
@@ -160,13 +190,18 @@ const addWeightedItem = () => {
 }
 
 const removeWeightedItem = (index) => {
-  weightedItems.value.splice(index, 1)
+  const [removed] = weightedItems.value.splice(index, 1)
+  if (removed) {
+    const next = { ...wonCounts.value }
+    delete next[removed.name]
+    wonCounts.value = next
+  }
   nextTick(() => scheduleRedraw('advanced'))
 }
 
 const weightPercentage = (item) => {
-  if (totalWeight.value === 0) return 0
-  return ((item.weight / totalWeight.value) * 100).toFixed(1)
+  if (totalWeight.value === 0) return '0.0'
+  return ((effectiveWeight(item) / totalWeight.value) * 100).toFixed(1)
 }
 
 // ===== Records =====
@@ -552,15 +587,21 @@ const redrawQuickWheel = () => {
 const buildAdvancedSegments = () => {
   const items = weightedItems.value
   if (items.length === 0 || totalWeight.value === 0) return []
-  return items.map((item, i) => ({
-    label: item.name,
-    angle: (item.weight / totalWeight.value) * Math.PI * 2,
-    color: wheelColors[i % wheelColors.length],
-  }))
+  return items
+    .map((item, i) => ({
+      label: item.name,
+      angle: (effectiveWeight(item) / totalWeight.value) * Math.PI * 2,
+      color: wheelColors[i % wheelColors.length],
+    }))
+    .filter((segment) => segment.angle > 0)
 }
 
+// 一次抽奖从开始到结果展示期间固定转盘布局：扣库存后某个奖品可能消失，
+// 若此时（如窗口缩放、切换主题）按最新库存重绘，高亮会落到错误的格子上
+let frozenAdvancedSegments = null
+
 const redrawAdvancedWheel = () => {
-  const segs = buildAdvancedSegments()
+  const segs = frozenAdvancedSegments ?? buildAdvancedSegments()
   drawWheel(advancedCanvasRef.value, segs, advancedRotation, {
     spinning: isAdvancedSpinning.value,
     lightPhase: advancedLightPhase,
@@ -591,12 +632,15 @@ const startQuickSpin = () => {
   }
 
   // Determine winners（Web Crypto 随机源，避免 Math.random 的可预测性）
-  const winners = allowDuplicate.value
-    ? Array.from({ length: count }, () => items[randomInt(0, items.length - 1)])
-    : sampleWithoutReplacement(items, count)
+  // 按下标抽取：选项重名时转盘也能停在真正抽中的那一格
+  const indices = items.map((_, i) => i)
+  const winnerIndices = allowDuplicate.value
+    ? Array.from({ length: count }, () => randomInt(0, items.length - 1))
+    : sampleWithoutReplacement(indices, count)
+  const winners = winnerIndices.map((i) => items[i])
 
   // Wheel targets first winner
-  const winnerIdx = items.indexOf(winners[0])
+  const winnerIdx = winnerIndices[0]
   isQuickSpinning.value = true
   quickResult.value = []
   quickWinnerIndex.value = -1
@@ -645,21 +689,27 @@ const startQuickSpin = () => {
 const startAdvancedSpin = () => {
   const items = weightedItems.value
   if (items.length === 0) { showToast('请先添加奖品', 'info'); return }
-  if (totalWeight.value === 0) { showToast('所有奖品权重为 0', 'error'); return }
+  if (totalWeight.value === 0) {
+    showToast(hasWonPrizes.value ? '奖品已全部抽完，请点击「重置库存」' : '所有奖品权重为 0', 'error')
+    return
+  }
 
-  // Weighted random（Web Crypto 随机源）
-  const winnerIdx = Math.max(0, weightedIndex(items.map((item) => item.weight)))
+  // Weighted random（Web Crypto 随机源），已抽完的奖品权重为 0
+  const weights = items.map(effectiveWeight)
+  const winnerIdx = weightedIndex(weights)
+  if (winnerIdx < 0) return
 
   isAdvancedSpinning.value = true
   advancedResult.value = []
   advancedWinnerIndex.value = -1
+  frozenAdvancedSegments = buildAdvancedSegments()
 
   // Calculate target angle for weighted segments
   let winnerCenterAngle = 0
   for (let i = 0; i < winnerIdx; i++) {
-    winnerCenterAngle += (items[i].weight / totalWeight.value) * Math.PI * 2
+    winnerCenterAngle += (weights[i] / totalWeight.value) * Math.PI * 2
   }
-  winnerCenterAngle += (items[winnerIdx].weight / totalWeight.value) * Math.PI
+  winnerCenterAngle += (weights[winnerIdx] / totalWeight.value) * Math.PI
 
   const startRot = advancedRotation
   const targetAngle = (Math.PI * 2) - winnerCenterAngle
@@ -684,9 +734,11 @@ const startAdvancedSpin = () => {
       advancedAnimId = requestAnimationFrame(animate)
     } else {
       isAdvancedSpinning.value = false
-      advancedWinnerIndex.value = winnerIdx
-      advancedResult.value = [items[winnerIdx].name]
+      const prize = items[winnerIdx]
+      advancedWinnerIndex.value = frozenAdvancedSegments.findIndex((segment) => segment.label === prize.name)
+      advancedResult.value = [prize.name]
       redrawAdvancedWheel()
+      wonCounts.value = { ...wonCounts.value, [prize.name]: wonOf(prize) + 1 }
       triggerConfetti()
       const names = items.map(i => i.name)
       addRecord('高级抽奖', names, [items[winnerIdx].name])
@@ -717,10 +769,11 @@ watch(quickItems, () => {
   }
 })
 
-watch(() => weightedItems.value.map(i => `${i.name}:${i.weight}`).join(','), () => {
+watch(() => weightedItems.value.map(i => `${i.name}:${i.weight}:${i.limit}`).join(','), () => {
   if (!isAdvancedSpinning.value) {
     advancedWinnerIndex.value = -1
     advancedResult.value = []
+    frozenAdvancedSegments = null
     scheduleRedraw('advanced')
   }
 })
@@ -732,15 +785,24 @@ watch(activeTab, (tab) => {
   if (tab === 'templates') newTemplatesCount.value = 0
 })
 
+// 转盘颜色取决于主题，切换主题后重绘
+let themeObserver = null
+
 // ===== Lifecycle =====
 onMounted(() => {
   loadRecords()
   loadCustomTemplates()
   scheduleRedraw('quick')
   window.addEventListener('resize', handleResize)
+  themeObserver = new MutationObserver(() => {
+    if (!isQuickSpinning.value) scheduleRedraw('quick')
+    if (!isAdvancedSpinning.value) scheduleRedraw('advanced')
+  })
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 })
 
 onUnmounted(() => {
+  themeObserver?.disconnect()
   if (quickAnimId) cancelAnimationFrame(quickAnimId)
   if (advancedAnimId) cancelAnimationFrame(advancedAnimId)
   window.removeEventListener('resize', handleResize)
@@ -897,7 +959,7 @@ onUnmounted(() => {
       <div class="section-card">
         <div class="section-card-title">奖品配置</div>
         <div class="add-item-row">
-          <input v-model="newItemName" placeholder="奖品名称" class="add-input name-input" @keyup.enter="addWeightedItem" />
+          <input v-model="newItemName" placeholder="奖品名称" class="add-input name-input" @keydown.enter="!$event.isComposing && addWeightedItem()" />
           <div class="add-field">
             <label>权重</label>
             <input v-model.number="newItemWeight" type="number" min="1" class="add-input small-input" />
@@ -918,7 +980,7 @@ onUnmounted(() => {
             <span class="ph-limit">数量</span>
             <span class="ph-action">操作</span>
           </div>
-          <div v-for="(item, idx) in weightedItems" :key="idx" class="prize-row">
+          <div v-for="(item, idx) in weightedItems" :key="item.name" class="prize-row" :class="{ exhausted: isExhausted(item) }">
             <span class="pr-name">
               <span class="color-dot" :style="{ background: wheelColors[idx % wheelColors.length] }"></span>
               {{ item.name }}
@@ -927,7 +989,7 @@ onUnmounted(() => {
               <input v-model.number="item.weight" type="number" min="1" class="inline-input" />
             </span>
             <span class="pr-prob">{{ weightPercentage(item) }}%</span>
-            <span class="pr-limit">{{ item.limit === 0 ? '不限' : item.limit }}</span>
+            <span class="pr-limit" :class="{ exhausted: isExhausted(item) }">{{ limitLabel(item) }}</span>
             <span class="pr-action">
               <button class="btn-remove" @click="removeWeightedItem(idx)">✕</button>
             </span>
@@ -963,6 +1025,9 @@ onUnmounted(() => {
           <div v-for="(item, idx) in advancedResult" :key="idx" class="result-tag big">{{ item }}</div>
         </div>
         <button class="btn-again" @click="startAdvancedSpin">🔄 再来一次</button>
+      </div>
+      <div v-if="hasWonPrizes && !isAdvancedSpinning" class="stock-actions">
+        <button class="btn-again" @click="resetPrizeStock">♻️ 重置库存</button>
       </div>
     </div>
 
@@ -1071,7 +1136,7 @@ onUnmounted(() => {
           <h3 class="modal-title">保存为自定义模板</h3>
           <div class="modal-field">
             <label>模板名称</label>
-            <input v-model="newTemplateName" placeholder="例如：团建抽奖" class="modal-input" @keyup.enter="addCustomTemplate" />
+            <input v-model="newTemplateName" placeholder="例如：团建抽奖" class="modal-input" @keydown.enter="!$event.isComposing && addCustomTemplate()" />
           </div>
           <div class="modal-field">
             <label>模板内容（每行一个）</label>
@@ -1883,7 +1948,21 @@ h2 {
 .ph-name, .pr-name { flex: 2; }
 .ph-weight, .pr-weight { flex: 1; text-align: center; }
 .ph-prob, .pr-prob { flex: 1; text-align: center; color: #e91e63; font-weight: 700; }
-.ph-limit, .pr-limit { flex: 1; text-align: center; color: #888; }
+.ph-limit, .prize-row.exhausted {
+  opacity: 0.5;
+}
+
+.pr-limit.exhausted {
+  color: var(--text-3);
+}
+
+.stock-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.pr-limit { flex: 1; text-align: center; color: #888; }
 .ph-action, .pr-action { flex: 0.5; text-align: center; }
 
 .pr-name {
@@ -2444,306 +2523,306 @@ h2 {
 }
 
 /* ===== Dark Mode ===== */
-:global([data-theme='dark']) .lottery-tool h2 {
+:root[data-theme='dark'] .lottery-tool h2 {
   background: linear-gradient(135deg, #f48fb1, #ff80ab);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-:global([data-theme='dark']) .lottery-tool .description { color: #a0a0a0; }
+:root[data-theme='dark'] .lottery-tool .description { color: #a0a0a0; }
 
-:global([data-theme='dark']) .lottery-tool .mode-tabs {
+:root[data-theme='dark'] .lottery-tool .mode-tabs {
   background: #1e1e30;
 }
 
-:global([data-theme='dark']) .lottery-tool .tab-btn {
+:root[data-theme='dark'] .lottery-tool .tab-btn {
   background: transparent;
   color: #888;
 }
-:global([data-theme='dark']) .lottery-tool .tab-btn.active {
+:root[data-theme='dark'] .lottery-tool .tab-btn.active {
   background: #2a2a3e;
   color: #f48fb1;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
-:global([data-theme='dark']) .lottery-tool .tab-btn:hover:not(.active) {
+:root[data-theme='dark'] .lottery-tool .tab-btn:hover:not(.active) {
   color: #f48fb1;
   background: rgba(244, 143, 177, 0.08);
 }
-:global([data-theme='dark']) .lottery-tool .tab-btn.active .badge {
+:root[data-theme='dark'] .lottery-tool .tab-btn.active .badge {
   background: rgba(244, 143, 177, 0.2);
   color: #f48fb1;
 }
 
-:global([data-theme='dark']) .lottery-tool .section-card {
+:root[data-theme='dark'] .lottery-tool .section-card {
   background: #1e1e30;
   border-color: #2a2a40;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
-:global([data-theme='dark']) .lottery-tool .section-card-title {
+:root[data-theme='dark'] .lottery-tool .section-card-title {
   color: #f48fb1;
   border-bottom-color: #2a2a40;
 }
 
-:global([data-theme='dark']) .lottery-tool .template-label {
+:root[data-theme='dark'] .lottery-tool .template-label {
   background: #2a2030;
   color: #f48fb1;
 }
 
-:global([data-theme='dark']) .lottery-tool .input-label,
-:global([data-theme='dark']) .lottery-tool .config-item label {
+:root[data-theme='dark'] .lottery-tool .input-label,
+:root[data-theme='dark'] .lottery-tool .config-item label {
   color: #ccc;
 }
 
-:global([data-theme='dark']) .lottery-tool .tpl-chip {
+:root[data-theme='dark'] .lottery-tool .tpl-chip {
   background: #2a2030;
   border-color: #3a2a40;
   color: #f48fb1;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-chip:hover {
+:root[data-theme='dark'] .lottery-tool .tpl-chip:hover {
   background: #e91e63;
   color: white;
   border-color: #e91e63;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-chip.custom-chip {
+:root[data-theme='dark'] .lottery-tool .tpl-chip.custom-chip {
   background: #2a2820;
   border-color: #3a3520;
   color: #ffd54f;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-chip.custom-chip:hover {
+:root[data-theme='dark'] .lottery-tool .tpl-chip.custom-chip:hover {
   background: #ff8f00;
   color: white;
 }
 
-:global([data-theme='dark']) .lottery-tool .input-textarea {
+:root[data-theme='dark'] .lottery-tool .input-textarea {
   background-color: #1a1a2e;
   color: #e0e0e0;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .input-textarea:focus {
+:root[data-theme='dark'] .lottery-tool .input-textarea:focus {
   background-color: #222240;
   border-color: #e91e63;
   box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.15);
 }
 
-:global([data-theme='dark']) .lottery-tool .item-count { color: #666; }
+:root[data-theme='dark'] .lottery-tool .item-count { color: #666; }
 
-:global([data-theme='dark']) .lottery-tool .quick-input-bar {
+:root[data-theme='dark'] .lottery-tool .quick-input-bar {
   background: #1e1e30;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .settings-col {
+:root[data-theme='dark'] .lottery-tool .settings-col {
   border-left-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .setting-item label { color: #777; }
+:root[data-theme='dark'] .lottery-tool .setting-item label { color: #777; }
 
-:global([data-theme='dark']) .lottery-tool .items-preview-count {
+:root[data-theme='dark'] .lottery-tool .items-preview-count {
   background: rgba(233, 30, 99, 0.15);
   color: #f48fb1;
 }
-:global([data-theme='dark']) .lottery-tool .preview-tag {
+:root[data-theme='dark'] .lottery-tool .preview-tag {
   background: #2a2a3e;
   border-color: #3a3a50;
   color: #ccc;
 }
-:global([data-theme='dark']) .lottery-tool .preview-more { color: #555; }
+:root[data-theme='dark'] .lottery-tool .preview-more { color: #555; }
 
-:global([data-theme='dark']) .lottery-tool .config-input {
+:root[data-theme='dark'] .lottery-tool .config-input {
   background: #1a1a2e;
   color: #e0e0e0;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .config-input:focus {
+:root[data-theme='dark'] .lottery-tool .config-input:focus {
   border-color: #e91e63;
   background: #222240;
 }
 
-:global([data-theme='dark']) .lottery-tool .toggle-btn {
+:root[data-theme='dark'] .lottery-tool .toggle-btn {
   background: #2a2a3e;
   color: #888;
 }
-:global([data-theme='dark']) .lottery-tool .toggle-track {
+:root[data-theme='dark'] .lottery-tool .toggle-track {
   background: #3a3a50;
 }
-:global([data-theme='dark']) .lottery-tool .toggle-btn.on {
+:root[data-theme='dark'] .lottery-tool .toggle-btn.on {
   background: rgba(233, 30, 99, 0.15);
   color: #f48fb1;
 }
-:global([data-theme='dark']) .lottery-tool .toggle-btn.on .toggle-track {
+:root[data-theme='dark'] .lottery-tool .toggle-btn.on .toggle-track {
   background: #e91e63;
 }
 
-:global([data-theme='dark']) .lottery-tool .wheel-stage {
+:root[data-theme='dark'] .lottery-tool .wheel-stage {
   background: linear-gradient(160deg, #0f0a18 0%, #1a1028 40%, #0f0a18 100%);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-:global([data-theme='dark']) .lottery-tool .spin-btn {
+:root[data-theme='dark'] .lottery-tool .spin-btn {
   background: linear-gradient(135deg, #c2185b, #e91e63);
 }
 
-:global([data-theme='dark']) .lottery-tool .result-section {
+:root[data-theme='dark'] .lottery-tool .result-section {
   background: linear-gradient(135deg, #2a1830, #1e1e30, #2a1830);
   border-color: #3a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .result-title { color: #f48fb1; }
-:global([data-theme='dark']) .lottery-tool .result-tag {
+:root[data-theme='dark'] .lottery-tool .result-title { color: #f48fb1; }
+:root[data-theme='dark'] .lottery-tool .result-tag {
   background: linear-gradient(135deg, #c2185b, #ad1457);
 }
 
-:global([data-theme='dark']) .lottery-tool .btn-again {
+:root[data-theme='dark'] .lottery-tool .btn-again {
   background: transparent;
   color: #f48fb1;
   border-color: #f48fb1;
 }
-:global([data-theme='dark']) .lottery-tool .btn-again:hover {
+:root[data-theme='dark'] .lottery-tool .btn-again:hover {
   background: #e91e63;
   color: white;
 }
 
-:global([data-theme='dark']) .lottery-tool .add-input {
+:root[data-theme='dark'] .lottery-tool .add-input {
   background: #1a1a2e;
   color: #e0e0e0;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .add-input:focus {
+:root[data-theme='dark'] .lottery-tool .add-input:focus {
   border-color: #e91e63;
   background: #222240;
 }
-:global([data-theme='dark']) .lottery-tool .add-field label { color: #777; }
-:global([data-theme='dark']) .lottery-tool .btn-add {
+:root[data-theme='dark'] .lottery-tool .add-field label { color: #777; }
+:root[data-theme='dark'] .lottery-tool .btn-add {
   background: linear-gradient(135deg, #c2185b, #e91e63);
 }
 
-:global([data-theme='dark']) .lottery-tool .prize-list { border-color: #2a2a40; }
-:global([data-theme='dark']) .lottery-tool .prize-header {
+:root[data-theme='dark'] .lottery-tool .prize-list { border-color: #2a2a40; }
+:root[data-theme='dark'] .lottery-tool .prize-header {
   background: linear-gradient(135deg, #2a1830, #301830);
   color: #f48fb1;
 }
-:global([data-theme='dark']) .lottery-tool .prize-row {
+:root[data-theme='dark'] .lottery-tool .prize-row {
   border-top-color: #2a2030;
   color: #ddd;
 }
-:global([data-theme='dark']) .lottery-tool .prize-row:nth-child(even) { background: rgba(233, 30, 99, 0.03); }
-:global([data-theme='dark']) .lottery-tool .prize-row:hover { background: #2a1830; }
-:global([data-theme='dark']) .lottery-tool .pr-prob { color: #f48fb1; }
-:global([data-theme='dark']) .lottery-tool .pr-limit { color: #777; }
-:global([data-theme='dark']) .lottery-tool .inline-input {
+:root[data-theme='dark'] .lottery-tool .prize-row:nth-child(even) { background: rgba(233, 30, 99, 0.03); }
+:root[data-theme='dark'] .lottery-tool .prize-row:hover { background: #2a1830; }
+:root[data-theme='dark'] .lottery-tool .pr-prob { color: #f48fb1; }
+:root[data-theme='dark'] .lottery-tool .pr-limit { color: #777; }
+:root[data-theme='dark'] .lottery-tool .inline-input {
   border-color: #2a2a40;
   color: #e0e0e0;
 }
-:global([data-theme='dark']) .lottery-tool .inline-input:focus {
+:root[data-theme='dark'] .lottery-tool .inline-input:focus {
   border-color: #e91e63;
   background: #222240;
 }
-:global([data-theme='dark']) .lottery-tool .btn-remove { color: #555; }
-:global([data-theme='dark']) .lottery-tool .btn-remove:hover {
+:root[data-theme='dark'] .lottery-tool .btn-remove { color: #555; }
+:root[data-theme='dark'] .lottery-tool .btn-remove:hover {
   color: #f48fb1;
   background: #2a1830;
 }
 
-:global([data-theme='dark']) .lottery-tool .tpl-section-title { color: #e0e0e0; }
-:global([data-theme='dark']) .lottery-tool .tpl-section + .tpl-section { border-top-color: #2a2a40; }
-:global([data-theme='dark']) .lottery-tool .tpl-card {
+:root[data-theme='dark'] .lottery-tool .tpl-section-title { color: #e0e0e0; }
+:root[data-theme='dark'] .lottery-tool .tpl-section + .tpl-section { border-top-color: #2a2a40; }
+:root[data-theme='dark'] .lottery-tool .tpl-card {
   background: #1e1e30;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-card:hover {
+:root[data-theme='dark'] .lottery-tool .tpl-card:hover {
   border-color: #e91e63;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-card.custom {
+:root[data-theme='dark'] .lottery-tool .tpl-card.custom {
   background: #1e1e28;
   border-color: #3a3520;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-card-name { color: #e0e0e0; }
-:global([data-theme='dark']) .lottery-tool .tpl-card-preview { color: #888; }
-:global([data-theme='dark']) .lottery-tool .tpl-card-meta { color: #555; }
-:global([data-theme='dark']) .lottery-tool .tpl-empty {
+:root[data-theme='dark'] .lottery-tool .tpl-card-name { color: #e0e0e0; }
+:root[data-theme='dark'] .lottery-tool .tpl-card-preview { color: #888; }
+:root[data-theme='dark'] .lottery-tool .tpl-card-meta { color: #555; }
+:root[data-theme='dark'] .lottery-tool .tpl-empty {
   color: #555;
   background: #1a1a2e;
   border-color: #2a2a40;
 }
 
-:global([data-theme='dark']) .lottery-tool .btn-save-tpl {
+:root[data-theme='dark'] .lottery-tool .btn-save-tpl {
   background: #2a2820;
   border-color: #3a3520;
   color: #ffd54f;
 }
-:global([data-theme='dark']) .lottery-tool .btn-save-tpl:hover {
+:root[data-theme='dark'] .lottery-tool .btn-save-tpl:hover {
   background: #ff8f00;
   color: white;
 }
 
-:global([data-theme='dark']) .lottery-tool .empty-records {
+:root[data-theme='dark'] .lottery-tool .empty-records {
   color: #555;
   background: #1a1a2e;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .records-header { color: #888; }
-:global([data-theme='dark']) .lottery-tool .btn-clear {
+:root[data-theme='dark'] .lottery-tool .records-header { color: #888; }
+:root[data-theme='dark'] .lottery-tool .btn-clear {
   background: #2a2a3e;
   color: #ccc;
   border-color: #3a3a50;
 }
-:global([data-theme='dark']) .lottery-tool .btn-clear:hover {
+:root[data-theme='dark'] .lottery-tool .btn-clear:hover {
   background: #e91e63;
   color: white;
   border-color: #e91e63;
 }
 
-:global([data-theme='dark']) .lottery-tool .record-card {
+:root[data-theme='dark'] .lottery-tool .record-card {
   border-color: #2a2a40;
   background: #1e1e30;
   border-left-color: #3a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .record-card:hover { border-left-color: #e91e63; }
-:global([data-theme='dark']) .lottery-tool .record-mode { color: #f48fb1; }
-:global([data-theme='dark']) .lottery-tool .record-time { color: #666; }
-:global([data-theme='dark']) .lottery-tool .record-result-tag {
+:root[data-theme='dark'] .lottery-tool .record-card:hover { border-left-color: #e91e63; }
+:root[data-theme='dark'] .lottery-tool .record-mode { color: #f48fb1; }
+:root[data-theme='dark'] .lottery-tool .record-time { color: #666; }
+:root[data-theme='dark'] .lottery-tool .record-result-tag {
   background: linear-gradient(135deg, #c2185b, #ad1457);
 }
-:global([data-theme='dark']) .lottery-tool .record-pool { color: #666; }
+:root[data-theme='dark'] .lottery-tool .record-pool { color: #666; }
 
-:global([data-theme='dark']) .lottery-tool .modal-overlay {
+:root[data-theme='dark'] .lottery-tool .modal-overlay {
   background: rgba(0, 0, 0, 0.65);
 }
-:global([data-theme='dark']) .lottery-tool .modal-box {
+:root[data-theme='dark'] .lottery-tool .modal-box {
   background: #1e1e30;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
-:global([data-theme='dark']) .lottery-tool .modal-title { color: #e0e0e0; }
-:global([data-theme='dark']) .lottery-tool .modal-field label { color: #ccc; }
-:global([data-theme='dark']) .lottery-tool .modal-input {
+:root[data-theme='dark'] .lottery-tool .modal-title { color: #e0e0e0; }
+:root[data-theme='dark'] .lottery-tool .modal-field label { color: #ccc; }
+:root[data-theme='dark'] .lottery-tool .modal-input {
   background: #1a1a2e;
   color: #e0e0e0;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .modal-input:focus {
+:root[data-theme='dark'] .lottery-tool .modal-input:focus {
   border-color: #e91e63;
   box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.15);
 }
-:global([data-theme='dark']) .lottery-tool .modal-textarea {
+:root[data-theme='dark'] .lottery-tool .modal-textarea {
   background: #1a1a2e;
   color: #e0e0e0;
   border-color: #2a2a40;
 }
-:global([data-theme='dark']) .lottery-tool .modal-textarea:focus {
+:root[data-theme='dark'] .lottery-tool .modal-textarea:focus {
   border-color: #e91e63;
   box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.15);
 }
-:global([data-theme='dark']) .lottery-tool .modal-btn.cancel { background: #2a2a3e; color: #ccc; }
+:root[data-theme='dark'] .lottery-tool .modal-btn.cancel { background: #2a2a3e; color: #ccc; }
 
-:global([data-theme='dark']) .lottery-tool .tpl-edit-input {
+:root[data-theme='dark'] .lottery-tool .tpl-edit-input {
   background: #1a1a2e;
   color: #e0e0e0;
   border-color: #3a3520;
 }
-:global([data-theme='dark']) .lottery-tool .tpl-edit-textarea {
+:root[data-theme='dark'] .lottery-tool .tpl-edit-textarea {
   background: #1a1a2e;
   color: #e0e0e0;
   border-color: #3a3520;
 }
 
-:global([data-theme='dark']) .lottery-tool .wheel-hint {
+:root[data-theme='dark'] .lottery-tool .wheel-hint {
   background: rgba(0, 0, 0, 0.55);
   border-color: rgba(255, 255, 255, 0.06);
 }

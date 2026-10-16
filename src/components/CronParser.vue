@@ -311,7 +311,7 @@ h2 {
   transition: all 0.3s;
 }
 
-:global([data-theme='dark']) .btn-pattern {
+:root[data-theme='dark'] .btn-pattern {
   color: #f48fb1;
 }
 
@@ -345,7 +345,7 @@ h2 {
   border-left: 4px solid #c33;
 }
 
-:global([data-theme='dark']) .error-message {
+:root[data-theme='dark'] .error-message {
   color: #ff8a8a;
   border-left-color: #ff8a8a;
 }
@@ -387,7 +387,7 @@ h2 {
   text-align: center;
 }
 
-:global([data-theme='dark']) .field-value {
+:root[data-theme='dark'] .field-value {
   color: #f48fb1;
 }
 
@@ -500,7 +500,7 @@ h2 {
   border-radius: 4px;
 }
 
-:global([data-theme='dark']) .exec-weekday {
+:root[data-theme='dark'] .exec-weekday {
   color: #f48fb1;
 }
 
@@ -578,7 +578,7 @@ h2 {
   }
 }
 
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] h2 {
   color: #f48fb1;
 }
 </style>

@@ -2,6 +2,13 @@
 import { computed, ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { convertBase as convertBaseValue } from '../utils/numberBase'
+import {
+  convertLinear,
+  convertTemperature,
+  LENGTH_UNITS,
+  VOLUME_UNITS,
+  WEIGHT_UNITS,
+} from '../utils/unitConvert'
 
 const { copyText } = useClipboard()
 
@@ -12,46 +19,17 @@ const lengthValue = ref('')
 const lengthFrom = ref('m')
 const lengthTo = ref('km')
 
-const lengthUnits = {
-  mm: { name: '毫米', factor: 0.001 },
-  cm: { name: '厘米', factor: 0.01 },
-  m: { name: '米', factor: 1 },
-  km: { name: '千米', factor: 1000 },
-  ft: { name: '英尺', factor: 0.3048 },
-  in: { name: '英寸', factor: 0.0254 },
-  yd: { name: '码', factor: 0.9144 },
-  mi: { name: '英里', factor: 1609.34 },
-}
+const lengthUnits = LENGTH_UNITS
 
-const convertLength = () => {
-  if (!lengthValue.value) return ''
-  const value = parseFloat(lengthValue.value)
-  const fromFactor = lengthUnits[lengthFrom.value].factor
-  const toFactor = lengthUnits[lengthTo.value].factor
-  return ((value * fromFactor) / toFactor).toFixed(6)
-}
+// 空串才算"未输入"：type=number 的 v-model 会把 0 转成数字 0，不能用 !value 判断
+const convertLength = () => convertLinear(lengthValue.value, lengthFrom.value, lengthTo.value, lengthUnits)
 
 // 温度转换
 const tempValue = ref('')
 const tempFrom = ref('C')
 const tempTo = ref('F')
 
-const convertTemp = () => {
-  if (!tempValue.value) return ''
-  const value = parseFloat(tempValue.value)
-  let kelvin = 0
-
-  if (tempFrom.value === 'C') kelvin = value + 273.15
-  else if (tempFrom.value === 'F') kelvin = (value - 32) * 5 / 9 + 273.15
-  else kelvin = value
-
-  let result = 0
-  if (tempTo.value === 'C') result = kelvin - 273.15
-  else if (tempTo.value === 'F') result = (kelvin - 273.15) * 9 / 5 + 32
-  else result = kelvin
-
-  return result.toFixed(2)
-}
+const convertTemp = () => convertTemperature(tempValue.value, tempFrom.value, tempTo.value)
 
 // 进制转换（逐字符校验 + BigInt，非法字符会明确报错而不是被 parseInt 截断）
 const numberValue = ref('')
@@ -70,45 +48,18 @@ const weightValue = ref('')
 const weightFrom = ref('kg')
 const weightTo = ref('lb')
 
-const weightUnits = {
-  mg: { name: '毫克', factor: 0.000001 },
-  g: { name: '克', factor: 0.001 },
-  kg: { name: '千克', factor: 1 },
-  t: { name: '吨', factor: 1000 },
-  oz: { name: '盎司', factor: 0.0283495 },
-  lb: { name: '磅', factor: 0.453592 },
-  st: { name: '英石', factor: 6.35029 },
-}
+const weightUnits = WEIGHT_UNITS
 
-const convertWeight = () => {
-  if (!weightValue.value) return ''
-  const value = parseFloat(weightValue.value)
-  const fromFactor = weightUnits[weightFrom.value].factor
-  const toFactor = weightUnits[weightTo.value].factor
-  return ((value * fromFactor) / toFactor).toFixed(6)
-}
+const convertWeight = () => convertLinear(weightValue.value, weightFrom.value, weightTo.value, weightUnits)
 
 // 体积转换
 const volumeValue = ref('')
 const volumeFrom = ref('L')
 const volumeTo = ref('mL')
 
-const volumeUnits = {
-  mL: { name: '毫升', factor: 0.001 },
-  L: { name: '升', factor: 1 },
-  gal: { name: '美加仑', factor: 3.78541 },
-  pt: { name: '品脱', factor: 0.473176 },
-  cup: { name: '杯', factor: 0.236588 },
-  fl_oz: { name: '液盎司', factor: 0.0295735 },
-}
+const volumeUnits = VOLUME_UNITS
 
-const convertVolume = () => {
-  if (!volumeValue.value) return ''
-  const value = parseFloat(volumeValue.value)
-  const fromFactor = volumeUnits[volumeFrom.value].factor
-  const toFactor = volumeUnits[volumeTo.value].factor
-  return ((value * fromFactor) / toFactor).toFixed(6)
-}
+const convertVolume = () => convertLinear(volumeValue.value, volumeFrom.value, volumeTo.value, volumeUnits)
 </script>
 
 <template>
@@ -431,57 +382,57 @@ h2 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   background-color: #2a2a3e;
   border-color: #664444;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .tab-btn:hover) {
+:root[data-theme='dark'] .tab-btn:hover {
   border-color: #ff8a8a;
   color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .tab-btn.active) {
+:root[data-theme='dark'] .tab-btn.active {
   background-color: #ff6b6b;
   color: white;
   border-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .input-field),
-:global([data-theme='dark'] .result-field),
-:global([data-theme='dark'] .select-field) {
+:root[data-theme='dark'] .input-field,
+:root[data-theme='dark'] .result-field,
+:root[data-theme='dark'] .select-field {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664444;
 }
 
-:global([data-theme='dark'] .input-field:focus),
-:global([data-theme='dark'] .select-field:focus) {
+:root[data-theme='dark'] .input-field:focus,
+:root[data-theme='dark'] .select-field:focus {
   border-color: #ff8a8a;
   box-shadow: 0 0 0 3px rgba(255, 138, 138, 0.1);
 }
 
-:global([data-theme='dark'] .result-field) {
+:root[data-theme='dark'] .result-field {
   background-color: #333;
   color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .btn-copy) {
+:root[data-theme='dark'] .btn-copy {
   background-color: #2a2a3e;
   color: #ff8a8a;
   border-color: #ff8a8a;
 }
 
-:global([data-theme='dark'] .btn-copy:hover) {
+:root[data-theme='dark'] .btn-copy:hover {
   background-color: #ff6b6b;
   color: white;
 }

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
+import { contrastRatio, hexToRgb, hslToHex, hslToRgb, normalizeHex, rgbToHex, rgbToHsl, wcagLevel } from '../utils/color'
 
 const { copyText } = useClipboard()
 
@@ -8,32 +9,8 @@ const activeTab = ref('convert')
 const colorInput = ref('#4ecdc4')
 const rgbInput = ref({ r: 78, g: 205, b: 196 })
 const hslInput = ref({ h: 174, s: 56, l: 56 })
-
-// HEX 转 RGB
-const hexToRgb = (hex) => {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-  return result
-    ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
-    : { r: 0, g: 0, b: 0 }
-}
-
-// RGB 转 HEX
-const rgbToHex = (r, g, b) => {
-  return (
-    '#' +
-    [r, g, b]
-      .map((x) => {
-        const hex = Math.round(x).toString(16)
-        return hex.length === 1 ? '0' + hex : hex
-      })
-      .join('')
-      .toUpperCase()
-  )
-}
+// 最近一次合法的颜色：用户在文本框里输入到一半时，预览 / 配色 / 取色器仍显示有效颜色
+const currentHex = ref('#4ECDC4')
 
 // 数字输入框清空时 v-model.number 会给出 ''，越界值也要夹到合法范围，否则会生成 "#NaNNaNNaN"
 const clampChannel = (value, max) => {
@@ -41,72 +18,6 @@ const clampChannel = (value, max) => {
   const num = Number(value)
   if (!Number.isFinite(num)) return null
   return Math.min(max, Math.max(0, Math.round(num)))
-}
-
-// RGB 转 HSL
-const rgbToHsl = (r, g, b) => {
-  r /= 255
-  g /= 255
-  b /= 255
-  const max = Math.max(r, g, b)
-  const min = Math.min(r, g, b)
-  let h, s, l = (max + min) / 2
-
-  if (max === min) {
-    h = s = 0
-  } else {
-    const d = max - min
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-    switch (max) {
-      case r:
-        h = ((g - b) / d + (g < b ? 6 : 0)) / 6
-        break
-      case g:
-        h = ((b - r) / d + 2) / 6
-        break
-      case b:
-        h = ((r - g) / d + 4) / 6
-        break
-    }
-  }
-
-  return {
-    h: Math.round(h * 360),
-    s: Math.round(s * 100),
-    l: Math.round(l * 100),
-  }
-}
-
-// HSL 转 RGB
-const hslToRgb = (h, s, l) => {
-  h = h / 360
-  s = s / 100
-  l = l / 100
-  let r, g, b
-
-  if (s === 0) {
-    r = g = b = l
-  } else {
-    const hue2rgb = (p, q, t) => {
-      if (t < 0) t += 1
-      if (t > 1) t -= 1
-      if (t < 1 / 6) return p + (q - p) * 6 * t
-      if (t < 1 / 2) return q
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
-      return p
-    }
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-    const p = 2 * l - q
-    r = hue2rgb(p, q, h + 1 / 3)
-    g = hue2rgb(p, q, h)
-    b = hue2rgb(p, q, h - 1 / 3)
-  }
-
-  return {
-    r: Math.round(r * 255),
-    g: Math.round(g * 255),
-    b: Math.round(b * 255),
-  }
 }
 
 const isUpdating = ref(false)
@@ -120,9 +31,12 @@ watch(
   () => colorInput.value,
   (newValue) => {
     if (isUpdating.value) return
-    if (/^#[0-9A-F]{6}$/i.test(newValue)) {
+    // 支持 #abc / abc / aabbcc 等写法
+    const hex = normalizeHex(newValue)
+    if (hex) {
       isUpdating.value = true
-      const rgb = hexToRgb(newValue)
+      currentHex.value = hex
+      const rgb = hexToRgb(hex)
       rgbInput.value = rgb
       const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b)
       hslInput.value = hsl
@@ -143,6 +57,7 @@ watch(
     if (r === null || g === null || b === null) return
     isUpdating.value = true
     colorInput.value = rgbToHex(r, g, b)
+    currentHex.value = colorInput.value
     const hsl = rgbToHsl(r, g, b)
     hslInput.value = hsl
     isUpdating.value = false
@@ -163,6 +78,7 @@ watch(
     const rgb = hslToRgb(h, s, l)
     rgbInput.value = rgb
     colorInput.value = rgbToHex(rgb.r, rgb.g, rgb.b)
+    currentHex.value = colorInput.value
     isUpdating.value = false
   },
   { deep: true, ...SYNC },
@@ -180,49 +96,32 @@ const palettes = [
   { name: '自然', colors: ['#264653', '#2a9d8f', '#e9c46a', '#f4a261', '#e76f51'] },
 ]
 
-const generateComplementary = () => {
-  const h = (hslInput.value.h + 180) % 360
-  return rgbToHex(...Object.values(hslToRgb(h, hslInput.value.s, hslInput.value.l)))
-}
+// 配色方案基于最近一次合法颜色计算，避免输入框临时为空时生成 #NANNANNAN
+const baseHsl = computed(() => {
+  const { r, g, b } = hexToRgb(currentHex.value)
+  return rgbToHsl(r, g, b)
+})
 
-const generateAnalogous = () => {
-  const colors = []
-  for (let i = -30; i <= 30; i += 30) {
-    const h = (hslInput.value.h + i + 360) % 360
-    colors.push(rgbToHex(...Object.values(hslToRgb(h, hslInput.value.s, hslInput.value.l))))
-  }
-  return colors
-}
+const withHue = (offset) => hslToHex(baseHsl.value.h + offset, baseHsl.value.s, baseHsl.value.l)
+const withLightness = (l) => hslToHex(baseHsl.value.h, baseHsl.value.s, l)
 
-const generateTriadic = () => {
-  const colors = []
-  for (let i = 0; i < 3; i++) {
-    const h = (hslInput.value.h + (i * 120)) % 360
-    colors.push(rgbToHex(...Object.values(hslToRgb(h, hslInput.value.s, hslInput.value.l))))
-  }
-  return colors
-}
+const generateComplementary = () => withHue(180)
+const generateAnalogous = () => [-30, 0, 30].map(withHue)
+const generateTriadic = () => [0, 120, 240].map(withHue)
+const generateTints = () => [0, 1, 2, 3, 4, 5].map((i) => withLightness(50 + i * 8))
+const generateShades = () => [0, 1, 2, 3, 4, 5].map((i) => withLightness(50 - i * 8))
 
-const generateTints = () => {
-  const colors = []
-  for (let i = 0; i <= 5; i++) {
-    const l = Math.round(50 + (i * 8))
-    colors.push(rgbToHex(...Object.values(hslToRgb(hslInput.value.h, hslInput.value.s, l))))
-  }
-  return colors
-}
-
-const generateShades = () => {
-  const colors = []
-  for (let i = 0; i <= 5; i++) {
-    const l = Math.round(50 - (i * 8))
-    colors.push(rgbToHex(...Object.values(hslToRgb(hslInput.value.h, hslInput.value.s, l))))
-  }
-  return colors
-}
+// WCAG 对比度：该颜色作为背景时，白字 / 黑字是否清晰可读
+const contrastInfo = computed(() => {
+  const rgb = hexToRgb(currentHex.value)
+  return [
+    { label: '白色文字', text: '#FFFFFF', ratio: contrastRatio(rgb, { r: 255, g: 255, b: 255 }) },
+    { label: '黑色文字', text: '#000000', ratio: contrastRatio(rgb, { r: 0, g: 0, b: 0 }) },
+  ].map((item) => ({ ...item, ratioText: item.ratio.toFixed(2), level: wcagLevel(item.ratio) }))
+})
 
 const applyColor = (color) => {
-  colorInput.value = color
+  colorInput.value = normalizeHex(color) ?? color
 }
 
 const rgbString = computed(() => {
@@ -263,8 +162,14 @@ const hslString = computed(() => {
     <!-- 颜色转换 -->
     <div v-show="activeTab === 'convert'" class="section">
       <div class="color-preview">
-        <input v-model="colorInput" type="color" class="color-picker" aria-label="颜色选择器" />
-        <div class="color-display" :style="{ backgroundColor: colorInput }"></div>
+        <input
+          :value="currentHex.toLowerCase()"
+          type="color"
+          class="color-picker"
+          aria-label="颜色选择器"
+          @input="colorInput = $event.target.value.toUpperCase()"
+        />
+        <div class="color-display" :style="{ backgroundColor: currentHex }"></div>
       </div>
 
       <div class="input-section">
@@ -314,6 +219,22 @@ const hslString = computed(() => {
           </div>
         </div>
       </div>
+
+      <div class="contrast-section">
+        <h3>WCAG 对比度（以该颜色为背景）</h3>
+        <div class="contrast-grid">
+          <div
+            v-for="item in contrastInfo"
+            :key="item.label"
+            class="contrast-card"
+            :style="{ backgroundColor: currentHex, color: item.text }"
+          >
+            <span class="contrast-sample">Aa 示例文字</span>
+            <span class="contrast-meta">{{ item.label }} · {{ item.ratioText }}:1</span>
+            <span :class="['contrast-level', { fail: item.level === '不达标' }]">{{ item.level }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 配色方案 -->
@@ -321,7 +242,7 @@ const hslString = computed(() => {
       <div class="scheme">
         <h3>互补色</h3>
         <div class="color-row">
-          <div class="color-box" :style="{ backgroundColor: colorInput }"></div>
+          <div class="color-box" :style="{ backgroundColor: currentHex }"></div>
           <div class="color-box" :style="{ backgroundColor: generateComplementary() }"></div>
         </div>
       </div>
@@ -399,6 +320,54 @@ const hslString = computed(() => {
 </template>
 
 <style scoped>
+.contrast-section {
+  margin-top: 1.5rem;
+}
+
+.contrast-section h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+}
+
+.contrast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.contrast-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.contrast-sample {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.contrast-meta {
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+}
+
+.contrast-level {
+  align-self: flex-start;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(46, 204, 113, 0.9);
+  color: #fff;
+}
+
+.contrast-level.fail {
+  background: rgba(231, 76, 60, 0.9);
+}
+
 .color-tools {
   display: flex;
   flex-direction: column;
@@ -639,84 +608,84 @@ h3 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ce93d8;
 }
 
-:global([data-theme='dark'] h3) {
+:root[data-theme='dark'] h3 {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   border-color: #664a7a;
   background-color: #2a2a3e;
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .tab-btn:hover) {
+:root[data-theme='dark'] .tab-btn:hover {
   border-color: #c792e0;
   color: #c792e0;
 }
 
-:global([data-theme='dark'] .tab-btn.active) {
+:root[data-theme='dark'] .tab-btn.active {
   background-color: #9c27b0;
   color: white;
 }
 
-:global([data-theme='dark'] .input-group label) {
+:root[data-theme='dark'] .input-group label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .input-field) {
+:root[data-theme='dark'] .input-field {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664a7a;
 }
 
-:global([data-theme='dark'] .input-field:focus) {
+:root[data-theme='dark'] .input-field:focus {
   border-color: #c792e0;
   box-shadow: 0 0 0 3px rgba(199, 146, 224, 0.1);
 }
 
-:global([data-theme='dark'] .rgb-item label),
-:global([data-theme='dark'] .hsl-item label) {
+:root[data-theme='dark'] .rgb-item label,
+:root[data-theme='dark'] .hsl-item label {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .rgb-item input),
-:global([data-theme='dark'] .hsl-item input) {
+:root[data-theme='dark'] .rgb-item input,
+:root[data-theme='dark'] .hsl-item input {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664a7a;
 }
 
-:global([data-theme='dark'] .rgb-item input:focus),
-:global([data-theme='dark'] .hsl-item input:focus) {
+:root[data-theme='dark'] .rgb-item input:focus,
+:root[data-theme='dark'] .hsl-item input:focus {
   border-color: #c792e0;
 }
 
-:global([data-theme='dark'] .btn-copy) {
+:root[data-theme='dark'] .btn-copy {
   border-color: #c792e0;
   background-color: #2a2a3e;
   color: #c792e0;
 }
 
-:global([data-theme='dark'] .btn-copy:hover) {
+:root[data-theme='dark'] .btn-copy:hover {
   background-color: #9c27b0;
   color: white;
 }
 
-:global([data-theme='dark'] .scheme),
-:global([data-theme='dark'] .palette) {
+:root[data-theme='dark'] .scheme,
+:root[data-theme='dark'] .palette {
   background: #2a2a3e;
   border-color: #664a7a;
 }
 
-:global([data-theme='dark'] .color-box:hover) {
+:root[data-theme='dark'] .color-box:hover {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 }
 </style>

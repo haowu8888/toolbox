@@ -193,21 +193,21 @@ const formatTime = (value) => {
   color: #b42318;
 }
 
-:global(:root[data-theme='dark']) .metal-trend-chart {
+:root[data-theme='dark'] .metal-trend-chart {
   background: linear-gradient(180deg, rgba(20, 27, 38, 0.96), rgba(12, 18, 27, 0.94));
   border-color: color-mix(in srgb, var(--accent) 25%, #223042);
   box-shadow: 0 12px 28px rgba(2, 6, 23, 0.3);
 }
 
-:global(:root[data-theme='dark']) .chart-svg,
-:global(:root[data-theme='dark']) .chart-empty {
+:root[data-theme='dark'] .chart-svg,
+:root[data-theme='dark'] .chart-empty {
   background: rgba(9, 14, 23, 0.92);
 }
 
-:global(:root[data-theme='dark']) .chart-header p,
-:global(:root[data-theme='dark']) .chart-state,
-:global(:root[data-theme='dark']) .chart-note,
-:global(:root[data-theme='dark']) .axis-labels {
+:root[data-theme='dark'] .chart-header p,
+:root[data-theme='dark'] .chart-state,
+:root[data-theme='dark'] .chart-note,
+:root[data-theme='dark'] .axis-labels {
   color: #94a3b8;
 }
 </style>

@@ -44,9 +44,9 @@ const reductionPercent = computed(() => {
 })
 
 const handleFile = (file) => {
-  const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+  const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/bmp', 'image/avif']
   if (!validTypes.includes(file.type)) {
-    showToast('请上传 PNG、JPG 或 WebP 格式的图片', 'error')
+    showToast('请上传 PNG、JPG、WebP、GIF、BMP 或 AVIF 格式的图片', 'error')
     return
   }
 
@@ -73,6 +73,8 @@ const handleFile = (file) => {
 
 const onFileChange = (e) => {
   const file = e.target.files[0]
+  // 清空 value，允许再次选择同一个文件
+  e.target.value = ''
   if (file) handleFile(file)
 }
 
@@ -116,15 +118,22 @@ const compress = () => {
       h = mh
     }
 
-    w = Math.round(w)
-    h = Math.round(h)
+    // 缩放比例很小时避免出现 0px 画布（toBlob 会返回 null）
+    w = Math.max(1, Math.round(w))
+    h = Math.max(1, Math.round(h))
 
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')
+    const mimeType = outputFormat.value
+    // JPEG 没有透明通道，透明像素会变成黑色，先铺白底
+    if (mimeType === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+    }
+    ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(img, 0, 0, w, h)
 
-    const mimeType = outputFormat.value
     const q = mimeType === 'image/png' ? undefined : quality.value / 100
 
     canvas.toBlob(
@@ -203,14 +212,14 @@ onUnmounted(() => {
       <input
         ref="fileInput"
         type="file"
-        accept="image/png,image/jpeg,image/webp"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif"
         style="display: none"
         @change="onFileChange"
       />
       <div class="drop-zone-content">
         <span class="drop-icon">🖼️</span>
         <p class="drop-text">拖拽图片到此处，或点击上传</p>
-        <p class="drop-hint">支持 PNG、JPG、WebP 格式</p>
+        <p class="drop-hint">支持 PNG、JPG、WebP、GIF、BMP、AVIF；转 JPEG 时透明区域填充为白色</p>
       </div>
     </div>
 
@@ -627,104 +636,104 @@ h4 {
 }
 
 /* Dark Mode */
-:global([data-theme='dark'] .image-compressor h2) {
+:root[data-theme='dark'] .image-compressor h2 {
   color: #aed581;
 }
 
-:global([data-theme='dark'] .image-compressor h3) {
+:root[data-theme='dark'] .image-compressor h3 {
   color: #aed581;
 }
 
-:global([data-theme='dark'] .image-compressor h4) {
+:root[data-theme='dark'] .image-compressor h4 {
   color: #b0b0b0;
 }
 
-:global([data-theme='dark'] .drop-zone) {
+:root[data-theme='dark'] .drop-zone {
   border-color: #555;
   background: #2a2a3e;
 }
 
-:global([data-theme='dark'] .drop-zone:hover) {
+:root[data-theme='dark'] .drop-zone:hover {
   border-color: #8bc34a;
   background: #2f3a28;
 }
 
-:global([data-theme='dark'] .drop-zone.drag-over) {
+:root[data-theme='dark'] .drop-zone.drag-over {
   border-color: #8bc34a;
   background: #354530;
   box-shadow: 0 0 0 4px rgba(139, 195, 74, 0.2);
 }
 
-:global([data-theme='dark'] .drop-text) {
+:root[data-theme='dark'] .drop-text {
   color: #ccc;
 }
 
-:global([data-theme='dark'] .drop-hint) {
+:root[data-theme='dark'] .drop-hint {
   color: #888;
 }
 
-:global([data-theme='dark'] .file-info) {
+:root[data-theme='dark'] .file-info {
   background: #2a2a3e;
 }
 
-:global([data-theme='dark'] .info-label) {
+:root[data-theme='dark'] .info-label {
   color: #999;
 }
 
-:global([data-theme='dark'] .info-value) {
+:root[data-theme='dark'] .info-value {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .settings-section) {
+:root[data-theme='dark'] .settings-section {
   background: #2a2a3e;
   border-color: #444;
 }
 
-:global([data-theme='dark'] .setting-item label) {
+:root[data-theme='dark'] .setting-item label {
   color: #ccc;
 }
 
-:global([data-theme='dark'] .setting-select),
-:global([data-theme='dark'] .setting-input) {
+:root[data-theme='dark'] .setting-select,
+:root[data-theme='dark'] .setting-input {
   background: #1e1e30;
   color: #e0e0e0;
   border-color: #555;
 }
 
-:global([data-theme='dark'] .setting-select:focus),
-:global([data-theme='dark'] .setting-input:focus) {
+:root[data-theme='dark'] .setting-select:focus,
+:root[data-theme='dark'] .setting-input:focus {
   border-color: #8bc34a;
   box-shadow: 0 0 0 3px rgba(139, 195, 74, 0.2);
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .result-section) {
+:root[data-theme='dark'] .result-section {
   background: #2a2a3e;
   border-color: #444;
 }
 
-:global([data-theme='dark'] .stat-item) {
+:root[data-theme='dark'] .stat-item {
   background: #1e1e30;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
-:global([data-theme='dark'] .stat-label) {
+:root[data-theme='dark'] .stat-label {
   color: #999;
 }
 
-:global([data-theme='dark'] .stat-value) {
+:root[data-theme='dark'] .stat-value {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .preview-box) {
+:root[data-theme='dark'] .preview-box {
   background: #1e1e30;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }

@@ -19,6 +19,15 @@ const loadNotes = () => {
 }
 
 const notes = ref(loadNotes())
+
+// 写入失败（配额已满 / 隐私模式）时必须提示，否则刷新后笔记会"凭空消失"
+const persist = () => {
+  if (!storage.setValue(notes.value)) {
+    showToast('保存失败：浏览器存储空间不足或不可用，请导出备份后清理数据', 'error', 5000)
+    return false
+  }
+  return true
+}
 const newNoteTitle = ref('')
 const newNoteContent = ref('')
 const newNoteTags = ref([])
@@ -92,7 +101,7 @@ const addNote = () => {
 
   const note = {
     id: createId('n-'),
-    title: newNoteTitle.value,
+    title: newNoteTitle.value.trim(),
     content: newNoteContent.value,
     isTodo: false,
     completed: false,
@@ -103,7 +112,7 @@ const addNote = () => {
   }
 
   notes.value.unshift(note)
-  storage.setValue(notes.value)
+  persist()
   addHistory('新建笔记', newNoteTitle.value)
   newNoteTitle.value = ''
   newNoteContent.value = ''
@@ -119,7 +128,7 @@ const addTodo = () => {
 
   const note = {
     id: createId('n-'),
-    title: newNoteTitle.value,
+    title: newNoteTitle.value.trim(),
     content: newNoteContent.value,
     isTodo: true,
     completed: false,
@@ -130,7 +139,7 @@ const addTodo = () => {
   }
 
   notes.value.unshift(note)
-  storage.setValue(notes.value)
+  persist()
   addHistory('新建待办', newNoteTitle.value)
   newNoteTitle.value = ''
   newNoteContent.value = ''
@@ -142,7 +151,7 @@ const requestDelete = (id) => {
   if (confirmDeleteId.value === id) {
     // Second click: actually delete
     notes.value = notes.value.filter(n => n.id !== id)
-    storage.setValue(notes.value)
+    persist()
     confirmDeleteId.value = null
     if (confirmTimer) clearTimeout(confirmTimer)
   } else {
@@ -157,21 +166,25 @@ const requestDelete = (id) => {
 
 const startEdit = (note) => {
   editingId.value = note.id
-  editTitle.value = note.title
-  editContent.value = note.content
+  editTitle.value = note.title || ''
+  editContent.value = note.content || ''
   editTags.value = [...(note.tags || [])]
   editPriority.value = note.priority || 'normal'
 }
 
 const saveEdit = () => {
+  if (!editTitle.value.trim()) {
+    showToast('标题不能为空', 'info')
+    return
+  }
   const note = notes.value.find(n => n.id === editingId.value)
   if (note) {
-    note.title = editTitle.value
+    note.title = editTitle.value.trim()
     note.content = editContent.value
     note.tags = [...editTags.value]
     note.priority = editPriority.value
     note.updatedAt = new Date()
-    storage.setValue(notes.value)
+    persist()
     showToast('笔记已更新')
   }
   cancelEdit()
@@ -190,7 +203,7 @@ const toggleCompleted = (id) => {
   if (note) {
     note.completed = !note.completed
     note.updatedAt = new Date()
-    storage.setValue(notes.value)
+    persist()
   }
 }
 
@@ -226,12 +239,12 @@ const exportAsMarkdown = () => {
   const priorityMap = { high: '高', normal: '普通', low: '低' }
   let md = '# 我的笔记\n\n'
   notes.value.forEach(note => {
-    md += `## ${note.title}\n`
+    md += `## ${note.title || '（无标题）'}\n`
     if (note.tags && note.tags.length) md += `- 标签: ${note.tags.join(', ')}\n`
     md += `- 优先级: ${priorityMap[note.priority] || '普通'}\n`
-    md += `- 创建时间: ${new Date(note.createdAt).toLocaleString('zh-CN')}\n`
+    if (note.createdAt) md += `- 创建时间: ${new Date(note.createdAt).toLocaleString('zh-CN')}\n`
     if (note.isTodo) md += `- 状态: ${note.completed ? '已完成' : '未完成'}\n`
-    md += `\n${note.content}\n\n---\n\n`
+    md += `\n${note.content || ''}\n\n---\n\n`
   })
   downloadText(md, timestampedFilename('toolbox-notes', 'md'), 'text/markdown;charset=utf-8')
   showExportMenu.value = false
@@ -250,7 +263,7 @@ const clearAll = () => {
 
 const confirmClearAll = () => {
   notes.value = []
-  storage.setValue([])
+  persist()
   searchQuery.value = ''
   confirmDeleteId.value = null
 }
@@ -274,7 +287,7 @@ const priorityColor = (priority) => {
         type="text"
         placeholder="输入标题或任务..."
         class="input-field"
-        @keyup.enter="addNote"
+        @keydown.enter="!$event.isComposing && addNote()"
       />
       <textarea
         v-model="newNoteContent"
@@ -477,7 +490,7 @@ h3 {
   color: #333;
 }
 
-:global([data-theme='dark'] h3) {
+:root[data-theme='dark'] h3 {
   color: #e0e0e0;
 }
 
@@ -486,7 +499,7 @@ h3.completed {
   color: #999;
 }
 
-:global([data-theme='dark'] h3.completed) {
+:root[data-theme='dark'] h3.completed {
   color: #669;
 }
 
@@ -506,7 +519,7 @@ h3.completed {
   padding: 1.5rem;
 }
 
-:global([data-theme='dark'] .add-section) {
+:root[data-theme='dark'] .add-section {
   background: #2a2a3a;
   border-color: #4a3a5a;
 }
@@ -524,8 +537,8 @@ h3.completed {
   transition: border-color 0.3s;
 }
 
-:global([data-theme='dark'] .input-field),
-:global([data-theme='dark'] .textarea-field) {
+:root[data-theme='dark'] .input-field,
+:root[data-theme='dark'] .textarea-field {
   background-color: #1a1a2e;
   border-color: #4a3a5a;
   color: #e0e0e0;
@@ -558,8 +571,8 @@ h3.completed {
   margin-right: 0.25rem;
 }
 
-:global([data-theme='dark'] .tag-label),
-:global([data-theme='dark'] .priority-label) {
+:root[data-theme='dark'] .tag-label,
+:root[data-theme='dark'] .priority-label {
   color: #a0a0a0;
 }
 
@@ -574,7 +587,7 @@ h3.completed {
   transition: all 0.2s;
 }
 
-:global([data-theme='dark'] .tag-btn) {
+:root[data-theme='dark'] .tag-btn {
   background: #2a2a3a;
   border-color: #4a3a5a;
   color: #a0a0a0;
@@ -627,7 +640,7 @@ h3.completed {
   border-color: #ef9a9a;
 }
 
-:global([data-theme='dark']) .priority-high {
+:root[data-theme='dark'] .priority-high {
   background: #3a1a1a;
   color: #ff6b6b;
   border-color: #5a2a2a;
@@ -639,7 +652,7 @@ h3.completed {
   border-color: #a5d6a7;
 }
 
-:global([data-theme='dark']) .priority-normal {
+:root[data-theme='dark'] .priority-normal {
   background: #1a3a1a;
   color: #66bb6a;
   border-color: #2a5a2a;
@@ -651,7 +664,7 @@ h3.completed {
   border-color: #e0e0e0;
 }
 
-:global([data-theme='dark']) .priority-low {
+:root[data-theme='dark'] .priority-low {
   background: #2a2a2a;
   color: #999;
   border-color: #444;
@@ -691,7 +704,7 @@ h3.completed {
   color: #333;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #3a3a4a;
   color: #e0e0e0;
 }
@@ -700,7 +713,7 @@ h3.completed {
   background-color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #4a4a5a;
 }
 
@@ -751,7 +764,7 @@ h3.completed {
   color: #666;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   background-color: #2a2a3a;
   border-color: #4a3a5a;
   color: #a0c0e0;
@@ -785,7 +798,7 @@ h3.completed {
   transition: border-color 0.3s;
 }
 
-:global([data-theme='dark'] .search-field) {
+:root[data-theme='dark'] .search-field {
   background-color: #1a1a2e;
   border-color: #4a3a5a;
   color: #e0e0e0;
@@ -807,7 +820,7 @@ h3.completed {
   cursor: pointer;
 }
 
-:global([data-theme='dark'] .filter-select) {
+:root[data-theme='dark'] .filter-select {
   background-color: #1a1a2e;
   border-color: #4a3a5a;
   color: #e0e0e0;
@@ -865,22 +878,22 @@ h3.completed {
   background: #f3e5f5;
 }
 
-:global([data-theme='dark'] .btn-export) {
+:root[data-theme='dark'] .btn-export {
   background: #2a2a3e;
   border-color: #9c27b0;
   color: #ce93d8;
 }
 
-:global([data-theme='dark'] .export-menu) {
+:root[data-theme='dark'] .export-menu {
   background: #2a2a3e;
   border-color: #4a3a5a;
 }
 
-:global([data-theme='dark'] .export-option) {
+:root[data-theme='dark'] .export-option {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .export-option:hover) {
+:root[data-theme='dark'] .export-option:hover {
   background: #3a2a4a;
 }
 
@@ -899,7 +912,7 @@ h3.completed {
   animation: slideUp 0.3s ease-out;
 }
 
-:global([data-theme='dark'] .note-card) {
+:root[data-theme='dark'] .note-card {
   background: #1a1a2e;
   border-color: #4a3a5a;
 }
@@ -926,7 +939,7 @@ h3.completed {
   background: #f5f5f5;
 }
 
-:global([data-theme='dark'] .note-card.completed) {
+:root[data-theme='dark'] .note-card.completed {
   background: #2a2a3a;
 }
 
@@ -974,9 +987,9 @@ h3.completed {
   transition: all 0.2s;
 }
 
-:global([data-theme='dark'] .btn-copy),
-:global([data-theme='dark'] .btn-delete),
-:global([data-theme='dark'] .btn-edit) {
+:root[data-theme='dark'] .btn-copy,
+:root[data-theme='dark'] .btn-delete,
+:root[data-theme='dark'] .btn-edit {
   background-color: #2a2a3a;
   border-color: #4a3a5a;
 }
@@ -986,7 +999,7 @@ h3.completed {
   border-color: #9c27b0;
 }
 
-:global([data-theme='dark'] .btn-edit:hover) {
+:root[data-theme='dark'] .btn-edit:hover {
   background-color: #3a2a4a;
 }
 
@@ -995,7 +1008,7 @@ h3.completed {
   border-color: #9c27b0;
 }
 
-:global([data-theme='dark'] .btn-copy:hover) {
+:root[data-theme='dark'] .btn-copy:hover {
   background-color: #3a3a4a;
 }
 
@@ -1004,7 +1017,7 @@ h3.completed {
   border-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .btn-delete:hover) {
+:root[data-theme='dark'] .btn-delete:hover {
   background-color: #3a2a2a;
 }
 
@@ -1027,7 +1040,7 @@ h3.completed {
   overflow-y: auto;
 }
 
-:global([data-theme='dark'] .note-content) {
+:root[data-theme='dark'] .note-content {
   color: #a0c0e0;
 }
 
@@ -1042,7 +1055,7 @@ h3.completed {
   gap: 0.5rem;
 }
 
-:global([data-theme='dark'] .note-footer) {
+:root[data-theme='dark'] .note-footer {
   border-top-color: #4a3a5a;
 }
 
@@ -1056,7 +1069,7 @@ h3.completed {
   color: #999;
 }
 
-:global([data-theme='dark'] .note-time) {
+:root[data-theme='dark'] .note-time {
   color: #669;
 }
 
@@ -1084,7 +1097,7 @@ h3.completed {
   font-weight: 600;
 }
 
-:global([data-theme='dark'] .tag-badge) {
+:root[data-theme='dark'] .tag-badge {
   background: #3a2a4a;
   color: #ce93d8;
 }
@@ -1124,7 +1137,7 @@ h3.completed {
   border-radius: 10px;
 }
 
-:global([data-theme='dark'] .empty-state) {
+:root[data-theme='dark'] .empty-state {
   background: #2a2a3a;
   border-color: #4a3a5a;
 }
@@ -1140,7 +1153,7 @@ h3.completed {
   font-size: 1rem;
 }
 
-:global([data-theme='dark'] .empty-state p) {
+:root[data-theme='dark'] .empty-state p {
   color: #669;
 }
 
@@ -1168,11 +1181,11 @@ h3.completed {
 }
 
 /* Dark mode overrides */
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ce93d8;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0c0e0;
 }
 </style>

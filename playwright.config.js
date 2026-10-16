@@ -5,6 +5,8 @@ const isCI = Boolean(process.env.CI)
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
+  // 首次加载需串行拉取主包 + 工具 chunk，慢机器 / CI 上 5s 默认值容易误报
+  expect: { timeout: 10_000 },
   retries: isCI ? 1 : 0,
   reporter: isCI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {

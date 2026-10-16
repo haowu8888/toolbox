@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useConfig } from '../composables/useConfig'
 import { useTheme } from '../composables/useTheme'
 import { formatBytes } from '../utils/format'
@@ -92,9 +92,9 @@ const handleClearAllData = () => {
   setTimeout(() => window.location.reload(), 1000)
 }
 
-onMounted(() => {
-  refreshStats()
-})
+onMounted(refreshStats)
+// KeepAlive 缓存后再次切回设置页时，其它工具可能已经改动了数据
+onActivated(refreshStats)
 </script>
 
 <template>
@@ -414,52 +414,52 @@ ul {
   }
 }
 
-:global([data-theme='dark']) .setting-section {
+:root[data-theme='dark'] .setting-section {
   background: #243240;
   border-color: #41576b;
 }
 
-:global([data-theme='dark']) .stat-item,
-:global([data-theme='dark']) .about-item {
+:root[data-theme='dark'] .stat-item,
+:root[data-theme='dark'] .about-item {
   background: #1b2733;
   border-color: #41576b;
 }
 
-:global([data-theme='dark']) .description,
-:global([data-theme='dark']) .stat-label,
-:global([data-theme='dark']) .label,
-:global([data-theme='dark']) .storage-text,
-:global([data-theme='dark']) .info-text,
-:global([data-theme='dark']) .warning-text {
+:root[data-theme='dark'] .description,
+:root[data-theme='dark'] .stat-label,
+:root[data-theme='dark'] .label,
+:root[data-theme='dark'] .storage-text,
+:root[data-theme='dark'] .info-text,
+:root[data-theme='dark'] .warning-text {
   color: #b7c7d6;
 }
 
-:global([data-theme='dark']) .theme-value,
-:global([data-theme='dark']) .stat-value,
-:global([data-theme='dark']) .value,
-:global([data-theme='dark']) .section-title,
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] .theme-value,
+:root[data-theme='dark'] .stat-value,
+:root[data-theme='dark'] .value,
+:root[data-theme='dark'] .section-title,
+:root[data-theme='dark'] h2 {
   color: #f3f7fb;
 }
 
-:global([data-theme='dark']) .backup-info {
+:root[data-theme='dark'] .backup-info {
   background: #193041;
   border-color: #2f526d;
 }
 
-:global([data-theme='dark']) .danger-zone,
-:global([data-theme='dark']) .danger-warning,
-:global([data-theme='dark']) .import-status.error {
+:root[data-theme='dark'] .danger-zone,
+:root[data-theme='dark'] .danger-warning,
+:root[data-theme='dark'] .import-status.error {
   background: #3a2020;
   border-color: #7f3b3b;
 }
 
-:global([data-theme='dark']) .import-status {
+:root[data-theme='dark'] .import-status {
   background: #163524;
   color: #a7f3d0;
 }
 
-:global([data-theme='dark']) .storage-bar {
+:root[data-theme='dark'] .storage-bar {
   background: #41576b;
 }
 </style>

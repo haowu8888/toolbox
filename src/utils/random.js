@@ -75,7 +75,9 @@ export const weightedIndex = (weights) => {
     cumulative += Math.max(0, weights[i])
     if (target < cumulative) return i
   }
-  return weights.length - 1
+  // 浮点误差兜底：返回最后一个权重为正的下标，绝不落在权重为 0 的项上
+  for (let i = weights.length - 1; i >= 0; i--) if (weights[i] > 0) return i
+  return -1
 }
 
 export const randomString = (length, alphabet) => {

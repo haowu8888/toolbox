@@ -17,13 +17,20 @@ const MAX_IMPORT_ITEMS = 500
 // null 表示“跟随系统”，导入时不写入主题键，避免把跟随系统的用户强制切成浅色
 const normalizeTheme = (theme) => (theme === 'dark' || theme === 'light' ? theme : null)
 
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+// 列表里混入 null / 数字等非对象条目时，读取它们的组件会直接崩溃，导入时先过滤掉
+const objectList = (value) => (Array.isArray(value) ? value.filter(isPlainObject).slice(0, MAX_IMPORT_ITEMS) : [])
+const stringList = (value) =>
+  Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item).slice(0, MAX_IMPORT_ITEMS) : []
+
 const normalizeAppState = (appState = {}) => ({
-  favoriteTools: Array.isArray(appState.favoriteTools) ? appState.favoriteTools : [],
-  recentTools: Array.isArray(appState.recentTools) ? appState.recentTools : [],
+  favoriteTools: stringList(appState.favoriteTools),
+  recentTools: stringList(appState.recentTools),
   lastTool: typeof appState.lastTool === 'string' && appState.lastTool ? appState.lastTool : null,
-  notes: Array.isArray(appState.notes) ? appState.notes : [],
-  lotteryTemplates: Array.isArray(appState.lotteryTemplates) ? appState.lotteryTemplates : [],
-  lotteryRecords: Array.isArray(appState.lotteryRecords) ? appState.lotteryRecords : [],
+  notes: objectList(appState.notes),
+  lotteryTemplates: objectList(appState.lotteryTemplates),
+  lotteryRecords: objectList(appState.lotteryRecords),
 })
 
 const readThemeValue = () => normalizeTheme(readStorageRaw(STORAGE_KEYS.theme))
@@ -40,15 +47,27 @@ const readAppState = () => {
   }
 }
 
+/** 返回是否全部写入成功（配额不足时 writeStorage* 返回 false） */
 const writeAppState = (appState) => {
-  writeStorageJson(STORAGE_KEYS.favoriteTools, appState.favoriteTools)
-  writeStorageJson(STORAGE_KEYS.recentTools, appState.recentTools)
-  writeStorageJson(STORAGE_KEYS.notes, appState.notes)
-  writeStorageJson(STORAGE_KEYS.lotteryTemplates, appState.lotteryTemplates)
-  writeStorageJson(STORAGE_KEYS.lotteryRecords, appState.lotteryRecords)
-
-  if (appState.lastTool) writeStorageRaw(STORAGE_KEYS.lastTool, appState.lastTool)
+  const results = [
+    writeStorageJson(STORAGE_KEYS.favoriteTools, appState.favoriteTools),
+    writeStorageJson(STORAGE_KEYS.recentTools, appState.recentTools),
+    writeStorageJson(STORAGE_KEYS.notes, appState.notes),
+    writeStorageJson(STORAGE_KEYS.lotteryTemplates, appState.lotteryTemplates),
+    writeStorageJson(STORAGE_KEYS.lotteryRecords, appState.lotteryRecords),
+  ]
+  if (appState.lastTool) results.push(writeStorageRaw(STORAGE_KEYS.lastTool, appState.lastTool))
   else removeStorageKey(STORAGE_KEYS.lastTool)
+  return results.every(Boolean)
+}
+
+const snapshotStorage = () => CLEARABLE_STORAGE_KEYS.map((storageKey) => [storageKey, readStorageRaw(storageKey)])
+
+const restoreStorage = (snapshot) => {
+  for (const [storageKey, value] of snapshot) {
+    if (value === null) removeStorageKey(storageKey)
+    else writeStorageRaw(storageKey, value)
+  }
 }
 
 const readFileAsText = (file) =>
@@ -84,8 +103,8 @@ export const validateImportedConfig = (data) => {
 
   return {
     config: data.config || {},
-    history: Array.isArray(data.history) ? data.history.slice(0, MAX_IMPORT_ITEMS) : [],
-    favorites: Array.isArray(data.favorites) ? data.favorites.slice(0, MAX_IMPORT_ITEMS) : [],
+    history: objectList(data.history),
+    favorites: objectList(data.favorites),
     theme: normalizeTheme(data.theme),
     appState: normalizeAppState(data.appState),
   }
@@ -129,12 +148,21 @@ export const useConfig = (key = STORAGE_KEYS.config) => {
     }
 
     const normalized = validateImportedConfig(data)
-    writeStorageJson(STORAGE_KEYS.config, normalized.config)
-    writeStorageJson(STORAGE_KEYS.history, normalized.history)
-    writeStorageJson(STORAGE_KEYS.favorites, normalized.favorites)
-    if (normalized.theme) writeStorageRaw(STORAGE_KEYS.theme, normalized.theme)
+    // 要么全部写入，要么回滚：避免配额不足时只导入一半
+    const snapshot = snapshotStorage()
+    const results = [
+      writeStorageJson(STORAGE_KEYS.config, normalized.config),
+      writeStorageJson(STORAGE_KEYS.history, normalized.history),
+      writeStorageJson(STORAGE_KEYS.favorites, normalized.favorites),
+    ]
+    if (normalized.theme) results.push(writeStorageRaw(STORAGE_KEYS.theme, normalized.theme))
     else removeStorageKey(STORAGE_KEYS.theme)
-    writeAppState(normalized.appState)
+    results.push(writeAppState(normalized.appState))
+
+    if (!results.every(Boolean)) {
+      restoreStorage(snapshot)
+      throw new Error('浏览器存储空间不足或不可用，导入已取消，原有数据未改动')
+    }
     return data
   }
 

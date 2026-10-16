@@ -502,7 +502,7 @@ h2 {
   font-size: 0.8em;
 }
 
-:global([data-theme='dark']) .line-no {
+:root[data-theme='dark'] .line-no {
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -534,11 +534,11 @@ h2 {
   color: var(--text);
 }
 
-:global([data-theme='dark']) .diff-insert {
+:root[data-theme='dark'] .diff-insert {
   color: #81c784;
 }
 
-:global([data-theme='dark']) .diff-delete {
+:root[data-theme='dark'] .diff-delete {
   color: #ef9a9a;
 }
 
@@ -608,11 +608,11 @@ h2 {
   color: #2e7d32;
 }
 
-:global([data-theme='dark']) .cell-delete {
+:root[data-theme='dark'] .cell-delete {
   color: #ef9a9a;
 }
 
-:global([data-theme='dark']) .cell-insert {
+:root[data-theme='dark'] .cell-insert {
   color: #81c784;
 }
 
@@ -662,7 +662,7 @@ h2 {
   }
 }
 
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] h2 {
   color: #4dd0e1;
 }
 </style>

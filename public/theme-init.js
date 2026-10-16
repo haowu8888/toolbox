@@ -4,9 +4,12 @@
   try {
     var saved = localStorage.getItem('toolbox_theme')
     var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-    if (saved === 'dark' || (!saved && prefersDark)) {
+    var dark = saved === 'dark' || (!saved && prefersDark)
+    if (dark) {
       document.documentElement.setAttribute('data-theme', 'dark')
     }
+    // 原生控件跟随实际主题（手动选择可能与系统不同）
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   } catch (e) {
     // 隐私模式等场景下 localStorage 不可用，忽略即可
   }

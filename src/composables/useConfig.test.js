@@ -36,6 +36,24 @@ describe('validateImportedConfig', () => {
     expect(validateImportedConfig({ version: '1.0', theme: 'blue' }).theme).toBeNull()
   })
 
+  it('drops malformed list entries that would crash the UI', () => {
+    const result = validateImportedConfig({
+      version: '1.0',
+      history: [null, 3, 'x', { id: 'h1', type: 't', value: 'v' }, []],
+      favorites: [{ id: 'f1' }, null],
+      appState: {
+        favoriteTools: ['json', 1, null, ''],
+        notes: [{ id: 1, title: 'ok' }, null, 'bad'],
+        lotteryRecords: [{ id: 'r1' }, 42],
+      },
+    })
+    expect(result.history).toEqual([{ id: 'h1', type: 't', value: 'v' }])
+    expect(result.favorites).toEqual([{ id: 'f1' }])
+    expect(result.appState.favoriteTools).toEqual(['json'])
+    expect(result.appState.notes).toEqual([{ id: 1, title: 'ok' }])
+    expect(result.appState.lotteryRecords).toEqual([{ id: 'r1' }])
+  })
+
   it('caps very long lists', () => {
     const history = Array.from({ length: 800 }, (_, i) => ({ id: i }))
     expect(validateImportedConfig({ version: '1.0', history }).history).toHaveLength(500)

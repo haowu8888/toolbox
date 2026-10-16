@@ -78,9 +78,10 @@ const proxyTrendRequest = async (request: Request) => {
   }
 
   const requestUrl = new URL(request.url)
-  const ticker = getTrendTicker(requestUrl.pathname)
 
   try {
+    // 路径里的 %xx 编码不合法时 decodeURIComponent 会抛 URIError，同样按 400 处理
+    const ticker = getTrendTicker(requestUrl.pathname)
     const yahooUrl = buildYahooChartUrl(ticker, requestUrl.searchParams)
     const response = await fetch(yahooUrl, {
       headers: {
@@ -100,7 +101,9 @@ const proxyTrendRequest = async (request: Request) => {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const status = message.startsWith('Unsupported') || message.startsWith('Missing') ? 400 : 502
+    const isClientError =
+      error instanceof URIError || message.startsWith('Unsupported') || message.startsWith('Missing')
+    const status = isClientError ? 400 : 502
     return jsonResponse({ error: message }, { status })
   }
 }

@@ -1,10 +1,16 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
 
 const { copyText } = useClipboard()
 const { addHistory } = useHistory()
+
+const ERROR = 'Error'
+// 超过 15 位有效数字 double 就无法精确表示，输入到此为止
+const MAX_INPUT_DIGITS = 15
+const MAX_LOCAL_HISTORY = 50
+const OPERATOR_SYMBOLS = { '+': '+', '-': '−', '*': '×', '/': '÷' }
 
 const display = ref('0')
 const previousValue = ref(null)
@@ -12,9 +18,18 @@ const operation = ref(null)
 const newNumber = ref(true)
 const history = ref([])
 
+const isError = () => display.value === ERROR
+
+// 正在进行的表达式，例如 "12 ×"
+const pendingExpression = computed(() =>
+  operation.value && previousValue.value !== null
+    ? `${previousValue.value} ${OPERATOR_SYMBOLS[operation.value]}`
+    : '',
+)
+
 // 二进制浮点误差（0.1 + 0.2 = 0.30000000000000004）对计算器用户毫无意义，统一按 12 位有效数字修约
 const normalizeNumber = (value) => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Error'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return ERROR
   return parseFloat(value.toPrecision(12))
 }
 
@@ -23,18 +38,37 @@ const safeCalc = (a, op, b) => {
     case '+': return normalizeNumber(a + b)
     case '-': return normalizeNumber(a - b)
     case '*': return normalizeNumber(a * b)
-    case '/': return b !== 0 ? normalizeNumber(a / b) : 'Error'
-    default: return 'Error'
+    case '/': return b !== 0 ? normalizeNumber(a / b) : ERROR
+    default: return ERROR
   }
 }
 
+const handleClear = () => {
+  display.value = '0'
+  previousValue.value = null
+  operation.value = null
+  newNumber.value = true
+}
+
+// 单目运算：Error 状态下直接复位，避免出现 NaN / "Erro"
+const applyUnary = (fn) => {
+  if (isError()) {
+    handleClear()
+    return
+  }
+  const result = fn(parseFloat(display.value))
+  display.value = String(result)
+  newNumber.value = true
+}
+
 const handleNumber = (num) => {
-  if (newNumber.value) {
+  if (newNumber.value || isError()) {
     display.value = num.toString()
     newNumber.value = false
-  } else {
-    display.value = display.value === '0' ? num.toString() : display.value + num
+    return
   }
+  if (display.value.replace(/[-.]/g, '').length >= MAX_INPUT_DIGITS) return
+  display.value = display.value === '0' ? num.toString() : display.value + num
 }
 
 const handleOperation = (op) => {
@@ -51,7 +85,13 @@ const handleOperation = (op) => {
     // 只有在用户输入了新操作数后才结算，连续点运算符只是改变运算类型
     const result = safeCalc(previousValue.value, operation.value, currentValue)
     display.value = result.toString()
-    previousValue.value = result === 'Error' ? null : result
+    if (result === ERROR) {
+      previousValue.value = null
+      operation.value = null
+      newNumber.value = true
+      return
+    }
+    previousValue.value = result
   }
 
   operation.value = op
@@ -59,32 +99,25 @@ const handleOperation = (op) => {
 }
 
 const handleEquals = () => {
-  if (operation.value && previousValue.value !== null) {
-    const currentValue = parseFloat(display.value)
-    const result = safeCalc(previousValue.value, operation.value, currentValue)
+  if (!operation.value || previousValue.value === null || isError()) return
+  const currentValue = parseFloat(display.value)
+  const result = safeCalc(previousValue.value, operation.value, currentValue)
+  const expression = `${previousValue.value} ${OPERATOR_SYMBOLS[operation.value]} ${currentValue}`
 
-    history.value.unshift({
-      expression: `${previousValue.value} ${operation.value} ${currentValue}`,
-      result: result,
-    })
-    addHistory('计算器', `${previousValue.value} ${operation.value} ${currentValue} = ${result}`)
+  history.value = [{ id: Date.now() + Math.random(), expression, result }, ...history.value].slice(
+    0,
+    MAX_LOCAL_HISTORY,
+  )
+  addHistory('计算器', `${expression} = ${result}`)
 
-    display.value = result.toString()
-    previousValue.value = null
-    operation.value = null
-    newNumber.value = true
-  }
-}
-
-const handleClear = () => {
-  display.value = '0'
+  display.value = result.toString()
   previousValue.value = null
   operation.value = null
   newNumber.value = true
 }
 
 const handleDecimal = () => {
-  if (newNumber.value) {
+  if (newNumber.value || isError()) {
     display.value = '0.'
     newNumber.value = false
   } else if (!display.value.includes('.')) {
@@ -93,33 +126,30 @@ const handleDecimal = () => {
 }
 
 const handleBackspace = () => {
-  if (display.value.length > 1) {
-    display.value = display.value.slice(0, -1)
-  } else {
+  // 结果 / Error 不允许逐位删除，直接归零
+  if (newNumber.value || isError()) {
     display.value = '0'
+    newNumber.value = false
+    return
   }
+  const next = display.value.slice(0, -1)
+  display.value = next === '' || next === '-' ? '0' : next
 }
 
-const handlePercent = () => {
-  const value = parseFloat(display.value)
-  display.value = (value / 100).toString()
-  newNumber.value = true
-}
+const handlePercent = () => applyUnary((value) => normalizeNumber(value / 100))
 
 const handlePlusMinus = () => {
-  const value = parseFloat(display.value)
-  display.value = (-value).toString()
+  if (isError() || display.value === '0') return
+  // 直接改字符串，保留正在输入的 "12." 这类中间状态
+  display.value = display.value.startsWith('-') ? display.value.slice(1) : `-${display.value}`
 }
 
-const handleSquare = () => {
-  const value = parseFloat(display.value)
-  display.value = normalizeNumber(value * value).toString()
-  newNumber.value = true
-}
+const handleSquare = () => applyUnary((value) => normalizeNumber(value * value))
 
-const handleSquareRoot = () => {
-  const value = parseFloat(display.value)
-  display.value = value < 0 ? 'Error' : normalizeNumber(Math.sqrt(value)).toString()
+const handleSquareRoot = () => applyUnary((value) => (value < 0 ? ERROR : normalizeNumber(Math.sqrt(value))))
+
+const reuseResult = (value) => {
+  display.value = String(value)
   newNumber.value = true
 }
 
@@ -128,16 +158,70 @@ const copyResult = () => copyText(display.value)
 const clearHistory = () => {
   history.value = []
 }
+
+// ---------- 键盘输入 ----------
+const KEY_ACTIONS = {
+  Enter: handleEquals,
+  '=': handleEquals,
+  Backspace: handleBackspace,
+  Escape: handleClear,
+  Delete: handleClear,
+  '.': handleDecimal,
+  ',': handleDecimal,
+  '%': handlePercent,
+  '+': () => handleOperation('+'),
+  '-': () => handleOperation('-'),
+  '*': () => handleOperation('*'),
+  x: () => handleOperation('*'),
+  '/': () => handleOperation('/'),
+}
+
+const isEditableTarget = (target) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+
+const onKeydown = (event) => {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return
+  if (isEditableTarget(event.target)) return
+  // 焦点在按钮上时，Enter 交给按钮自身的 click，避免同一次按键触发两次
+  if (event.key === 'Enter' && event.target instanceof HTMLButtonElement) return
+
+  const action = /^\d$/.test(event.key) ? () => handleNumber(Number(event.key)) : KEY_ACTIONS[event.key]
+  if (!action) return
+  event.preventDefault()
+  action()
+}
+
+// KeepAlive 缓存时不监听，免得在其它工具里按键也改动计算器
+let listening = false
+const listen = () => {
+  if (listening) return
+  window.addEventListener('keydown', onKeydown)
+  listening = true
+}
+const unlisten = () => {
+  if (!listening) return
+  window.removeEventListener('keydown', onKeydown)
+  listening = false
+}
+
+onMounted(listen)
+onActivated(listen)
+onDeactivated(unlisten)
+onUnmounted(unlisten)
 </script>
 
 <template>
   <div class="calculator">
     <h2>🧮 高级计算器</h2>
-    <p class="description">支持基本运算、高级函数、计算历史</p>
+    <p class="description">支持基本运算、高级函数、计算历史，可直接用键盘输入（Enter 求值，Esc 清空）</p>
 
     <div class="calculator-container">
       <div class="display-section">
-        <div class="display">{{ display }}</div>
+        <div class="display-stack">
+          <div class="pending" aria-hidden="true">{{ pendingExpression || '\u00a0' }}</div>
+          <div class="display" role="status" aria-live="polite">{{ display }}</div>
+        </div>
         <button @click="copyResult" class="btn-copy">📋 复制</button>
       </div>
 
@@ -185,11 +269,11 @@ const clearHistory = () => {
         <button @click="clearHistory" class="btn btn-small">清空</button>
       </div>
       <div class="history-list">
-        <div v-for="(item, index) in history" :key="index" class="history-item">
+        <div v-for="item in history" :key="item.id" class="history-item">
           <span class="expression">{{ item.expression }}</span>
           <span class="result">=</span>
           <span class="value">{{ item.result }}</span>
-          <button @click="() => { display = item.result.toString(); newNumber = true }" class="btn-reuse">📌</button>
+          <button @click="reuseResult(item.result)" class="btn-reuse" title="使用该结果" aria-label="使用该结果">📌</button>
         </div>
       </div>
     </div>
@@ -215,7 +299,7 @@ h3 {
   color: #333;
 }
 
-:global([data-theme='dark'] h3) {
+:root[data-theme='dark'] h3 {
   color: #e0e0e0;
 }
 
@@ -234,7 +318,7 @@ h3 {
   margin: 0 auto;
 }
 
-:global([data-theme='dark'] .calculator-container) {
+:root[data-theme='dark'] .calculator-container {
   background: #1a2a3a;
   border-color: #3a5a7a;
 }
@@ -243,11 +327,26 @@ h3 {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
-  align-items: center;
+  align-items: flex-end;
+}
+
+.display-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pending {
+  min-height: 1.2em;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text-3);
 }
 
 .display {
-  flex: 1;
   background: white;
   border: 2px solid #2196f3;
   border-radius: 8px;
@@ -264,7 +363,7 @@ h3 {
   font-family: 'Courier New', monospace;
 }
 
-:global([data-theme='dark'] .display) {
+:root[data-theme='dark'] .display {
   background: #2a3a4a;
   border-color: #2196f3;
   color: #42a5f5;
@@ -281,7 +380,7 @@ h3 {
   font-weight: 600;
 }
 
-:global([data-theme='dark'] .btn-copy) {
+:root[data-theme='dark'] .btn-copy {
   background: #2a3a4a;
 }
 
@@ -309,7 +408,7 @@ h3 {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-:global([data-theme='dark'] .btn) {
+:root[data-theme='dark'] .btn {
   background: #2a3a4a;
   color: #e0e0e0;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
@@ -320,7 +419,7 @@ h3 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-:global([data-theme='dark'] .btn:hover) {
+:root[data-theme='dark'] .btn:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -360,7 +459,7 @@ h3 {
   color: #555;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background: #3a4a5a;
   color: #a0c0e0;
 }
@@ -369,7 +468,7 @@ h3 {
   background: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background: #4a5a6a;
 }
 
@@ -384,7 +483,7 @@ h3 {
   color: #333;
 }
 
-:global([data-theme='dark'] .btn-small) {
+:root[data-theme='dark'] .btn-small {
   background: #2a3a4a;
   color: #e0e0e0;
 }
@@ -396,7 +495,7 @@ h3 {
   padding: 1.5rem;
 }
 
-:global([data-theme='dark'] .history-section) {
+:root[data-theme='dark'] .history-section {
   background: linear-gradient(135deg, #1a2a3a, #2a2a2a);
   border-color: #3a5a7a;
 }
@@ -426,7 +525,7 @@ h3 {
   font-size: 0.9rem;
 }
 
-:global([data-theme='dark'] .history-item) {
+:root[data-theme='dark'] .history-item {
   background: #2a3a4a;
   color: #e0e0e0;
 }
@@ -436,7 +535,7 @@ h3 {
   color: #666;
 }
 
-:global([data-theme='dark'] .expression) {
+:root[data-theme='dark'] .expression {
   color: #a0c0e0;
 }
 
@@ -486,28 +585,28 @@ h3 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #42a5f5;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .result) {
+:root[data-theme='dark'] .result {
   color: #a0c0e0;
 }
 
-:global([data-theme='dark'] .value) {
+:root[data-theme='dark'] .value {
   color: #42a5f5;
 }
 
-:global([data-theme='dark'] .btn-reuse) {
+:root[data-theme='dark'] .btn-reuse {
   border-color: #42a5f5;
   color: #42a5f5;
 }
 
-:global([data-theme='dark'] .btn-reuse:hover) {
+:root[data-theme='dark'] .btn-reuse:hover {
   background: #42a5f5;
   color: white;
 }

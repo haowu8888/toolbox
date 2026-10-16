@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useHistory } from '../composables/useStorage'
 import { diffLines, formatSimpleDiff } from '../utils/diff'
+import { formatJsonText } from '../utils/jsonFormat'
+import { formatMarkup, minifyMarkup } from '../utils/markupFormat'
+import { formatSql, minifySql } from '../utils/sqlFormat'
 
 const { copyText } = useClipboard()
 const { addHistory } = useHistory()
@@ -14,263 +17,19 @@ const indentSize = ref(2)
 const output = ref('')
 const sqlUppercase = ref(true)
 
-// JSON 格式化
-const formatJSON = (json) => {
-  try {
-    const parsed = JSON.parse(json)
-    return JSON.stringify(parsed, null, indentSize.value)
-  } catch (err) {
-    return 'JSON 解析错误：' + err.message
-  }
+const formatters = {
+  // 无损：大整数 / 1.0 / 转义序列原样保留
+  json: (code) => formatJsonText(code, indentSize.value).text,
+  sql: (code) => formatSql(code, { indent: indentSize.value, uppercase: sqlUppercase.value }),
+  html: (code) => formatMarkup(code, { indent: indentSize.value, html: true }),
+  xml: (code) => formatMarkup(code, { indent: indentSize.value, html: false }),
 }
 
-// SQL 格式化（增强版：支持缩进、关键字大写、括号对齐、子查询缩进）
-const formatSQL = (sql) => {
-  const indent = ' '.repeat(indentSize.value)
-
-  // SQL 主要关键字分类
-  const majorKeywords = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'UNION ALL', 'INTERSECT', 'EXCEPT', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE']
-  const joinKeywords = ['JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'FULL OUTER JOIN', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'CROSS JOIN', 'NATURAL JOIN']
-  const subKeywords = ['AND', 'OR', 'ON']
-
-  // Tokenize: split SQL into meaningful tokens while preserving strings and parentheses
-  const tokenize = (input) => {
-    const tokens = []
-    let i = 0
-    while (i < input.length) {
-      // Skip whitespace
-      if (/\s/.test(input[i])) {
-        i++
-        continue
-      }
-      // String literal (single quotes)
-      if (input[i] === "'") {
-        let j = i + 1
-        while (j < input.length) {
-          if (input[j] === "'" && input[j + 1] === "'") { j += 2; continue }
-          if (input[j] === "'") { j++; break }
-          j++
-        }
-        tokens.push({ type: 'string', value: input.substring(i, j) })
-        i = j
-        continue
-      }
-      // String literal (double quotes - identifiers)
-      if (input[i] === '"') {
-        let j = i + 1
-        while (j < input.length && input[j] !== '"') j++
-        j++
-        tokens.push({ type: 'string', value: input.substring(i, j) })
-        i = j
-        continue
-      }
-      // Parentheses
-      if (input[i] === '(') {
-        tokens.push({ type: 'openParen', value: '(' })
-        i++
-        continue
-      }
-      if (input[i] === ')') {
-        tokens.push({ type: 'closeParen', value: ')' })
-        i++
-        continue
-      }
-      // Comma
-      if (input[i] === ',') {
-        tokens.push({ type: 'comma', value: ',' })
-        i++
-        continue
-      }
-      // Semicolon
-      if (input[i] === ';') {
-        tokens.push({ type: 'semicolon', value: ';' })
-        i++
-        continue
-      }
-      // Word or operator
-      if (/[a-zA-Z_]/.test(input[i])) {
-        let j = i
-        while (j < input.length && /[a-zA-Z0-9_.]/.test(input[j])) j++
-        tokens.push({ type: 'word', value: input.substring(i, j) })
-        i = j
-        continue
-      }
-      // Numbers
-      if (/[0-9]/.test(input[i])) {
-        let j = i
-        while (j < input.length && /[0-9.]/.test(input[j])) j++
-        tokens.push({ type: 'number', value: input.substring(i, j) })
-        i = j
-        continue
-      }
-      // Operators and other characters
-      // Multi-char operators
-      if (i + 1 < input.length) {
-        const two = input.substring(i, i + 2)
-        if (['>=', '<=', '<>', '!=', '||', '::'].includes(two)) {
-          tokens.push({ type: 'operator', value: two })
-          i += 2
-          continue
-        }
-      }
-      tokens.push({ type: 'operator', value: input[i] })
-      i++
-    }
-    return tokens
-  }
-
-  // Merge multi-word keywords (e.g., "GROUP" + "BY" → "GROUP BY")
-  const mergeKeywords = (tokens) => {
-    const merged = []
-    const multiWord = ['GROUP BY', 'ORDER BY', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL JOIN', 'CROSS JOIN', 'NATURAL JOIN', 'LEFT OUTER JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'UNION ALL', 'INSERT INTO', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'IS NOT', 'NOT IN', 'NOT EXISTS', 'NOT LIKE', 'NOT BETWEEN']
-
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i].type === 'word') {
-        let matched = false
-        // Try 3-word combos first, then 2-word
-        for (const len of [3, 2]) {
-          if (i + len - 1 < tokens.length) {
-            const combo = tokens.slice(i, i + len).filter(t => t.type === 'word').map(t => t.value.toUpperCase()).join(' ')
-            if (multiWord.includes(combo) && tokens.slice(i, i + len).every(t => t.type === 'word')) {
-              merged.push({ type: 'word', value: tokens.slice(i, i + len).map(t => t.value).join(' ') })
-              i += len - 1
-              matched = true
-              break
-            }
-          }
-        }
-        if (!matched) {
-          merged.push(tokens[i])
-        }
-      } else {
-        merged.push(tokens[i])
-      }
-    }
-    return merged
-  }
-
-  // Classify a word token
-  const classify = (val) => {
-    const upper = val.toUpperCase()
-    if (majorKeywords.includes(upper)) return 'major'
-    if (joinKeywords.includes(upper)) return 'join'
-    if (subKeywords.includes(upper)) return 'sub'
-    return 'other'
-  }
-
-  // Format
-  const tokens = mergeKeywords(tokenize(sql))
-  let result = ''
-  let depth = 0
-  let afterSelect = false
-
-  const newline = () => '\n' + indent.repeat(depth)
-  const newlineIndented = () => '\n' + indent.repeat(depth + 1)
-
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
-    const val = token.value
-    const upper = val.toUpperCase()
-
-    if (token.type === 'word') {
-      const cls = classify(val)
-      const outputVal = sqlUppercase.value ? upper : val
-
-      if (cls === 'major') {
-        if (upper === 'SELECT') {
-          if (result.length > 0) result += newline()
-          result += outputVal
-          afterSelect = true
-        } else {
-          afterSelect = false
-          result += newline() + outputVal
-        }
-      } else if (cls === 'join') {
-        afterSelect = false
-        result += newline() + outputVal
-      } else if (cls === 'sub') {
-        afterSelect = false
-        result += newlineIndented() + outputVal
-      } else {
-        result += ' ' + (sqlUppercase.value && ['AS', 'IN', 'BETWEEN', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'NULL', 'TRUE', 'FALSE', 'NOT', 'IS', 'ASC', 'DESC', 'DISTINCT', 'ALL', 'ANY', 'SOME', 'INTO', 'TABLE', 'INDEX', 'VIEW', 'TRIGGER', 'FUNCTION', 'PROCEDURE', 'IF', 'BEGIN', 'COMMIT', 'ROLLBACK', 'CAST', 'COALESCE', 'NULLIF', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].includes(upper) ? upper : val)
-      }
-    } else if (token.type === 'openParen') {
-      result += ' ('
-      depth++
-      // Check if this is a subquery (next meaningful token is SELECT)
-      const nextWord = tokens.slice(i + 1).find(t => t.type === 'word')
-      if (nextWord && nextWord.value.toUpperCase() === 'SELECT') {
-        // Subquery: add newline after opening paren
-        result += newline()
-      }
-    } else if (token.type === 'closeParen') {
-      depth = Math.max(0, depth - 1)
-      result += newline() + ')'
-    } else if (token.type === 'comma') {
-      if (afterSelect) {
-        result += ',' + newlineIndented()
-      } else {
-        result += ','
-      }
-    } else if (token.type === 'semicolon') {
-      result += ';' + '\n'
-    } else {
-      result += ' ' + val
-    }
-  }
-
-  return result.trim()
-}
-
-// HTML 格式化
-const formatHTML = (html) => {
-  let result = ''
-  let indent = 0
-  const indentStr = ' '.repeat(indentSize.value)
-
-  let i = 0
-  while (i < html.length) {
-    if (html[i] === '<') {
-      const end = html.indexOf('>', i)
-      if (end === -1) {
-        // 标签没有闭合的 '>'：把剩余内容当文本输出并结束，否则 i 会被重置为 0 造成死循环
-        const rest = html.substring(i).trim()
-        if (rest) result += indentStr.repeat(indent) + rest + '\n'
-        break
-      }
-      const tag = html.substring(i, end + 1)
-
-      if (tag.startsWith('</')) {
-        indent = Math.max(0, indent - 1)
-        result += indentStr.repeat(indent) + tag + '\n'
-      } else if (tag.endsWith('/>') || tag.match(/<(br|hr|img|input|meta|link)/i)) {
-        result += indentStr.repeat(indent) + tag + '\n'
-      } else {
-        result += indentStr.repeat(indent) + tag + '\n'
-        if (!tag.startsWith('<!')) {
-          indent++
-        }
-      }
-
-      i = end + 1
-    } else {
-      const nextTag = html.indexOf('<', i)
-      const text = nextTag === -1 ? html.substring(i) : html.substring(i, nextTag)
-
-      if (text.trim()) {
-        result += indentStr.repeat(indent) + text.trim() + '\n'
-      }
-
-      i = nextTag === -1 ? html.length : nextTag
-    }
-  }
-
-  return result
-}
-
-// XML 格式化
-const formatXML = (xml) => {
-  return formatHTML(xml)
+const minifiers = {
+  json: (code) => formatJsonText(code, 0).text,
+  sql: (code) => minifySql(code),
+  html: (code) => minifyMarkup(code, { html: true }),
+  xml: (code) => minifyMarkup(code, { html: false }),
 }
 
 // 比较两个代码块
@@ -291,31 +50,23 @@ const format = () => {
   }
 
   try {
-    if (formatType.value === 'json') {
-      output.value = formatJSON(inputCode.value)
-    } else if (formatType.value === 'sql') {
-      output.value = formatSQL(inputCode.value)
-    } else if (formatType.value === 'html') {
-      output.value = formatHTML(inputCode.value)
-    } else if (formatType.value === 'xml') {
-      output.value = formatXML(inputCode.value)
-    }
+    output.value = formatters[formatType.value](inputCode.value)
     addHistory('代码格式化', output.value)
   } catch (err) {
-    output.value = '格式化错误：' + err.message
+    output.value = (formatType.value === 'json' ? 'JSON 解析错误：' : '格式化错误：') + err.message
   }
 }
 
 const copyToClipboard = (text) => copyText(text)
 
 const minify = () => {
+  if (!inputCode.value.trim()) {
+    output.value = ''
+    return
+  }
   try {
-    if (formatType.value === 'json') {
-      const parsed = JSON.parse(inputCode.value)
-      output.value = JSON.stringify(parsed)
-    } else {
-      output.value = inputCode.value.replace(/\s+/g, ' ').trim()
-    }
+    // 按语言分词后再压缩：字符串、<pre> 内容不会被改写，SQL 行注释会被移除以免吞掉后续代码
+    output.value = minifiers[formatType.value](inputCode.value)
     addHistory('代码压缩', output.value)
   } catch (err) {
     output.value = '压缩失败：' + err.message
@@ -478,7 +229,7 @@ h2 {
   color: #666;
 }
 
-:global([data-theme='dark'] .tab-btn) {
+:root[data-theme='dark'] .tab-btn {
   background-color: #2a2a3a;
   border-color: #4a3a5a;
   color: #a0c0e0;
@@ -511,7 +262,7 @@ h2 {
   border-radius: 8px;
 }
 
-:global([data-theme='dark'] .controls) {
+:root[data-theme='dark'] .controls {
   background: #2a2a3a;
   color: #e0e0e0;
 }
@@ -527,8 +278,8 @@ h2 {
   cursor: pointer;
 }
 
-:global([data-theme='dark'] .select-field),
-:global([data-theme='dark'] .input-field) {
+:root[data-theme='dark'] .select-field,
+:root[data-theme='dark'] .input-field {
   background-color: #1a1a2e;
   border-color: #4a3a5a;
   color: #e0e0e0;
@@ -554,7 +305,7 @@ h2 {
   color: #555;
 }
 
-:global([data-theme='dark'] .editor-label) {
+:root[data-theme='dark'] .editor-label {
   color: #a0c0e0;
 }
 
@@ -572,7 +323,7 @@ h2 {
   transition: border-color 0.3s;
 }
 
-:global([data-theme='dark'] .code-textarea) {
+:root[data-theme='dark'] .code-textarea {
   background-color: #1a1a2e;
   border-color: #4a3a5a;
   color: #e0e0e0;
@@ -588,7 +339,7 @@ h2 {
   background-color: #f5f5f5;
 }
 
-:global([data-theme='dark'] .code-textarea[readonly]) {
+:root[data-theme='dark'] .code-textarea[readonly] {
   background-color: #2a2a3a;
 }
 
@@ -618,7 +369,7 @@ h2 {
   color: #333;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #2a2a3a;
   color: #e0e0e0;
 }
@@ -627,7 +378,7 @@ h2 {
   background-color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #3a3a4a;
 }
 
@@ -641,7 +392,7 @@ h2 {
   transition: all 0.2s;
 }
 
-:global([data-theme='dark'] .btn-copy) {
+:root[data-theme='dark'] .btn-copy {
   background-color: #1a1a2e;
 }
 
@@ -668,7 +419,7 @@ h2 {
   cursor: pointer;
 }
 
-:global([data-theme='dark']) .checkbox-label {
+:root[data-theme='dark'] .checkbox-label {
   color: #a0c0e0;
 }
 
@@ -680,7 +431,7 @@ h2 {
   margin-top: 1rem;
 }
 
-:global([data-theme='dark'] .diff-result) {
+:root[data-theme='dark'] .diff-result {
   background: #2a2a3a;
   border-color: #4a3a5a;
 }
@@ -691,7 +442,7 @@ h2 {
   margin-bottom: 0.75rem;
 }
 
-:global([data-theme='dark'] .diff-header) {
+:root[data-theme='dark'] .diff-header {
   color: #a0c0e0;
 }
 
@@ -708,7 +459,7 @@ h2 {
   line-height: 1.4;
 }
 
-:global([data-theme='dark'] .diff-content) {
+:root[data-theme='dark'] .diff-content {
   background: #1a1a2e;
   color: #e0e0e0;
 }
@@ -735,11 +486,11 @@ h2 {
 }
 
 /* Dark mode overrides */
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ce93d8;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0c0e0;
 }
 </style>

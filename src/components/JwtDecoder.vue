@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
+import { useInterval } from '../composables/useInterval'
 import { useHistory } from '../composables/useStorage'
 import { formatDateTime, formatDuration } from '../utils/format'
 import {
@@ -15,7 +16,6 @@ const { addHistory } = useHistory()
 
 const jwtInput = ref('')
 const now = ref(Date.now())
-let ticker = null
 
 const decoded = computed(() => decodeJwt(jwtInput.value))
 const error = computed(() => decoded.value.error)
@@ -66,23 +66,10 @@ watch(decoded, (val) => {
   addHistory('JWT 解码', JSON.stringify(val.payload, null, 2))
 })
 
-const startTicker = () => {
-  if (ticker) return
-  ticker = setInterval(() => {
-    now.value = Date.now()
-  }, 1000)
-}
-
-const stopTicker = () => {
-  if (!ticker) return
-  clearInterval(ticker)
-  ticker = null
-}
-
-onMounted(startTicker)
-onActivated(startTicker)
-onDeactivated(stopTicker)
-onUnmounted(stopTicker)
+// 每秒刷新"剩余/已过期"倒计时；切走或页面隐藏时自动暂停
+useInterval(() => {
+  now.value = Date.now()
+}, 1000, { immediate: true })
 </script>
 
 <template>
@@ -225,7 +212,7 @@ h3 {
   border-left: 4px solid #c33;
 }
 
-:global([data-theme='dark']) .error-message {
+:root[data-theme='dark'] .error-message {
   color: #ff8a8a;
   border-left-color: #ff8a8a;
 }
@@ -315,11 +302,11 @@ h3 {
   border-color: transparent;
 }
 
-:global([data-theme='dark']) .status-chip.valid {
+:root[data-theme='dark'] .status-chip.valid {
   color: #81c784;
 }
 
-:global([data-theme='dark']) .status-chip.expired {
+:root[data-theme='dark'] .status-chip.expired {
   color: #ef9a9a;
 }
 
@@ -333,7 +320,7 @@ h3 {
   font-size: 0.9rem;
 }
 
-:global([data-theme='dark']) .algorithm-warning {
+:root[data-theme='dark'] .algorithm-warning {
   color: #ffc46b;
 }
 
@@ -360,7 +347,7 @@ h3 {
   color: #8e44ad;
 }
 
-:global([data-theme='dark']) .payload-part {
+:root[data-theme='dark'] .payload-part {
   color: #ce93d8;
 }
 
@@ -368,7 +355,7 @@ h3 {
   color: #2980b9;
 }
 
-:global([data-theme='dark']) .signature-part {
+:root[data-theme='dark'] .signature-part {
   color: #64b5f6;
 }
 
@@ -449,11 +436,11 @@ h3 {
   color: #2e7d32;
 }
 
-:global([data-theme='dark']) .expire-badge.expired {
+:root[data-theme='dark'] .expire-badge.expired {
   color: #ef9a9a;
 }
 
-:global([data-theme='dark']) .expire-badge.valid {
+:root[data-theme='dark'] .expire-badge.valid {
   color: #81c784;
 }
 
@@ -529,7 +516,7 @@ h3 {
   gap: 0.1rem;
 }
 
-:global([data-theme='dark']) .field-key {
+:root[data-theme='dark'] .field-key {
   color: #ce93d8;
 }
 
@@ -558,7 +545,7 @@ h3 {
   font-weight: 600;
 }
 
-:global([data-theme='dark']) .time-readable {
+:root[data-theme='dark'] .time-readable {
   color: #64b5f6;
 }
 
@@ -576,11 +563,11 @@ h3 {
   color: #2e7d32;
 }
 
-:global([data-theme='dark']) .expire-inline.expired {
+:root[data-theme='dark'] .expire-inline.expired {
   color: #ff8a8a;
 }
 
-:global([data-theme='dark']) .expire-inline.valid {
+:root[data-theme='dark'] .expire-inline.valid {
   color: #81c784;
 }
 
@@ -595,7 +582,7 @@ h3 {
   }
 }
 
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] h2 {
   color: #ff8a8a;
 }
 </style>

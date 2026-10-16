@@ -23,6 +23,8 @@ const applyTheme = (themeValue, persist) => {
   } else {
     root.removeAttribute('data-theme')
   }
+  // 让原生控件（滚动条、日期选择器、下拉框）也跟随手动选择的主题，而不是系统主题
+  root.style.colorScheme = themeValue
 
   manual.value = persist
   if (persist) {
@@ -38,6 +40,14 @@ const handleSystemThemeChange = (e) => {
     theme.value = e.matches ? 'dark' : 'light'
     applyTheme(theme.value, false)
   }
+}
+
+// 其它标签页切换主题时同步（storage 事件只在其它标签页触发）
+const handleStorageChange = (event) => {
+  if (event.key !== storageKey && event.key !== null) return
+  const saved = readSavedTheme()
+  theme.value = saved ?? (mediaQuery?.matches ? 'dark' : 'light')
+  applyTheme(theme.value, Boolean(saved))
 }
 
 // 初始化主题（若用户未手动选择主题，则跟随系统且不写入 localStorage）
@@ -58,6 +68,7 @@ const initTheme = () => {
 
   // 监听系统主题切换
   mediaQuery.addEventListener('change', handleSystemThemeChange)
+  window.addEventListener('storage', handleStorageChange)
 }
 
 // 切换主题
@@ -84,6 +95,7 @@ const resetTheme = () => {
 const disposeThemeListener = () => {
   if (!mediaQuery) return
   mediaQuery.removeEventListener('change', handleSystemThemeChange)
+  window.removeEventListener('storage', handleStorageChange)
   mediaQuery = null
   initialized = false
 }

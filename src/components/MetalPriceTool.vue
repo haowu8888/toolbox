@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onActivated, onMounted, ref } from 'vue'
 import MetalTrendChart from './MetalTrendChart.vue'
-import './metal-price-tool.css'
 import { useHistory } from '../composables/useStorage'
 import { useClipboard } from '../composables/useClipboard'
 import { useInterval } from '../composables/useInterval'
@@ -128,7 +127,10 @@ async function loadSnapshot({ manual = false } = {}) {
   return snapshotInFlight
 }
 
-async function loadSingleTrend(metalDef, forceRefresh) {
+// 每次加载趋势递增；快速切换周期时，过期请求的结果直接丢弃，不覆盖新周期的数据
+let trendRequestId = 0
+
+async function loadSingleTrend(metalDef, forceRefresh, requestId) {
   patchTrendCard(metalDef.symbol, { loading: true, error: '' })
   try {
     const trend = await fetchMetalTrend({
@@ -137,6 +139,7 @@ async function loadSingleTrend(metalDef, forceRefresh) {
       range: activeRange.value,
       forceRefresh,
     })
+    if (requestId !== trendRequestId) return
     patchTrendCard(metalDef.symbol, {
       ...trend,
       accent: metalDef.accent,
@@ -144,6 +147,7 @@ async function loadSingleTrend(metalDef, forceRefresh) {
       error: '',
     })
   } catch (error) {
+    if (requestId !== trendRequestId) return
     patchTrendCard(metalDef.symbol, {
       accent: metalDef.accent,
       loading: false,
@@ -153,10 +157,13 @@ async function loadSingleTrend(metalDef, forceRefresh) {
 }
 
 async function loadTrends({ forceRefresh = false } = {}) {
-  if (trendRefreshing.value) return
+  const requestId = ++trendRequestId
   trendRefreshing.value = true
-  await Promise.all(METAL_DEFS.map((metalDef) => loadSingleTrend(metalDef, forceRefresh)))
-  trendRefreshing.value = false
+  try {
+    await Promise.all(METAL_DEFS.map((metalDef) => loadSingleTrend(metalDef, forceRefresh, requestId)))
+  } finally {
+    if (requestId === trendRequestId) trendRefreshing.value = false
+  }
 }
 
 async function handleManualRefresh() {
@@ -315,3 +322,6 @@ onActivated(() => {
     </section>
   </div>
 </template>
+
+<!-- 样式单独成文件，scoped 防止 .description 等通用类名泄漏到其它工具 -->
+<style scoped src="./metal-price-tool.css"></style>

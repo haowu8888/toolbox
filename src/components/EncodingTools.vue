@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
+import { base64Decode, base64Encode } from '../utils/base64'
 
 const { copyText } = useClipboard()
 
@@ -8,20 +9,6 @@ const inputText = ref('')
 const encodingType = ref('base64-encode')
 const output = ref('')
 const error = ref('')
-
-const base64Encode = (text) => {
-  const bytes = new TextEncoder().encode(text)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-  return btoa(binary)
-}
-
-const base64Decode = (text) => {
-  const binary = atob(text)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return new TextDecoder().decode(bytes)
-}
 
 const urlEncode = (text) => {
   return encodeURIComponent(text)
@@ -340,62 +327,62 @@ h2 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #6edddd;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .encoding-options label) {
+:root[data-theme='dark'] .encoding-options label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .error-message) {
+:root[data-theme='dark'] .error-message {
   background-color: #4a2a2a;
   color: #ff6b6b;
   border-left-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .editor-label) {
+:root[data-theme='dark'] .editor-label {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .editor-textarea) {
+:root[data-theme='dark'] .editor-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #444;
 }
 
-:global([data-theme='dark'] .editor-textarea:focus) {
+:root[data-theme='dark'] .editor-textarea:focus {
   background-color: #333;
   border-color: #6edddd;
   box-shadow: 0 0 0 3px rgba(110, 221, 221, 0.1);
 }
 
-:global([data-theme='dark'] .editor-textarea[readonly]) {
+:root[data-theme='dark'] .editor-textarea[readonly] {
   background-color: #333;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-swap) {
+:root[data-theme='dark'] .btn-swap {
   border-color: #6edddd;
   background-color: #2a2a3e;
   color: #6edddd;
 }
 
-:global([data-theme='dark'] .btn-swap:hover) {
+:root[data-theme='dark'] .btn-swap:hover {
   background-color: #6edddd;
   color: #1a1a2e;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 </style>

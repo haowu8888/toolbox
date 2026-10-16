@@ -11,7 +11,8 @@ describe('useHistory', () => {
     addHistory('JSON', 'a')
     const second = addHistory('JSON', 'b')
     expect(historyList.value).toHaveLength(2)
-    expect(historyList.value[0]).toBe(second)
+    // ref 会把条目包成响应式代理，按值比较
+    expect(historyList.value[0]).toEqual(second)
     expect(second.id).toMatch(/^h-/)
     expect(new Date(second.timestamp).getTime()).not.toBeNaN()
   })

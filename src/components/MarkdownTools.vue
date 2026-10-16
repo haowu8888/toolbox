@@ -16,6 +16,21 @@ const markdown = new MarkdownIt({
   typographer: true,
 })
 
+// 预览里的链接在新标签页打开，否则点一下就离开了工具箱、输入内容全部丢失
+const defaultLinkOpen =
+  markdown.renderer.rules.link_open ?? ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
+markdown.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  tokens[idx].attrSet('target', '_blank')
+  tokens[idx].attrSet('rel', 'noopener noreferrer')
+  return defaultLinkOpen(tokens, idx, options, env, self)
+}
+
+// 导出 HTML 时用第一个标题作为 <title>
+const documentTitle = () => {
+  const heading = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/m.exec(inputMarkdown.value)?.[1]
+  return encodeBasicEntities(heading || 'Markdown 文档')
+}
+
 const inputMarkdown = ref('')
 const view = ref('split')
 const htmlOutput = ref('')
@@ -27,7 +42,7 @@ const render = () => {
     return
   }
   try {
-    htmlOutput.value = sanitizeHtml(markdown.render(inputMarkdown.value))
+    htmlOutput.value = sanitizeHtml(markdown.render(inputMarkdown.value), { allowTargetBlank: true })
   } catch (err) {
     htmlOutput.value = `<p class="render-error">错误：${encodeBasicEntities(err.message)}</p>`
   }
@@ -72,7 +87,7 @@ const downloadHtml = () => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Markdown 转换</title>
+  <title>${documentTitle()}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
@@ -520,126 +535,126 @@ h2 {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ce93d8;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .view-btn) {
+:root[data-theme='dark'] .view-btn {
   border-color: #664a7a;
   background-color: #2a2a3e;
   color: #c792e0;
 }
 
-:global([data-theme='dark'] .view-btn.active) {
+:root[data-theme='dark'] .view-btn.active {
   background-color: #9c27b0;
   color: white;
   border-color: #9c27b0;
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .pane-header) {
+:root[data-theme='dark'] .pane-header {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .editor-textarea) {
+:root[data-theme='dark'] .editor-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664a7a;
 }
 
-:global([data-theme='dark'] .editor-textarea:focus) {
+:root[data-theme='dark'] .editor-textarea:focus {
   background-color: #333;
   border-color: #c792e0;
   box-shadow: 0 0 0 3px rgba(199, 146, 224, 0.1);
 }
 
-:global([data-theme='dark'] .quick-insert) {
+:root[data-theme='dark'] .quick-insert {
   background-color: #333;
 }
 
-:global([data-theme='dark'] .quick-insert-label) {
+:root[data-theme='dark'] .quick-insert-label {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .quick-btn) {
+:root[data-theme='dark'] .quick-btn {
   border-color: #c792e0;
   background-color: #2a2a3e;
   color: #c792e0;
 }
 
-:global([data-theme='dark'] .quick-btn:hover) {
+:root[data-theme='dark'] .quick-btn:hover {
   background-color: #9c27b0;
   color: white;
 }
 
-:global([data-theme='dark'] .markdown-preview) {
+:root[data-theme='dark'] .markdown-preview {
   background-color: #2a2a3e;
   border-color: #664a7a;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .markdown-preview h1),
-:global([data-theme='dark'] .markdown-preview h2),
-:global([data-theme='dark'] .markdown-preview h3),
-:global([data-theme='dark'] .markdown-preview h4),
-:global([data-theme='dark'] .markdown-preview h5),
-:global([data-theme='dark'] .markdown-preview h6) {
+:root[data-theme='dark'] .markdown-preview :deep(h1),
+:root[data-theme='dark'] .markdown-preview :deep(h2),
+:root[data-theme='dark'] .markdown-preview :deep(h3),
+:root[data-theme='dark'] .markdown-preview :deep(h4),
+:root[data-theme='dark'] .markdown-preview :deep(h5),
+:root[data-theme='dark'] .markdown-preview :deep(h6) {
   color: #c792e0;
 }
 
-:global([data-theme='dark'] .markdown-preview h1) {
+:root[data-theme='dark'] .markdown-preview :deep(h1) {
   border-bottom-color: #664a7a;
 }
 
-:global([data-theme='dark'] .markdown-preview code) {
+:root[data-theme='dark'] .markdown-preview :deep(code) {
   background-color: #333;
   color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .markdown-preview pre) {
+:root[data-theme='dark'] .markdown-preview :deep(pre) {
   background-color: #333;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .markdown-preview pre code) {
+:root[data-theme='dark'] .markdown-preview :deep(pre code) {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .markdown-preview blockquote) {
+:root[data-theme='dark'] .markdown-preview :deep(blockquote) {
   color: #a0a0a0;
   border-left-color: #c792e0;
 }
 
-:global([data-theme='dark'] .markdown-preview table) {
+:root[data-theme='dark'] .markdown-preview :deep(table) {
   border-color: #444;
 }
 
-:global([data-theme='dark'] .markdown-preview th),
-:global([data-theme='dark'] .markdown-preview td) {
+:root[data-theme='dark'] .markdown-preview :deep(th),
+:root[data-theme='dark'] .markdown-preview :deep(td) {
   border-color: #444;
 }
 
-:global([data-theme='dark'] .markdown-preview th) {
+:root[data-theme='dark'] .markdown-preview :deep(th) {
   background-color: #333;
 }
 
-:global([data-theme='dark'] .markdown-preview hr) {
+:root[data-theme='dark'] .markdown-preview :deep(hr) {
   border-top-color: #664a7a;
 }
 
-:global([data-theme='dark'] .markdown-preview a) {
+:root[data-theme='dark'] .markdown-preview :deep(a) {
   color: #c792e0;
 }
 </style>

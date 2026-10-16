@@ -1,188 +1,172 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useClipboard } from '../composables/useClipboard'
 import { useToast } from '../composables/useToast'
 import { useHistory } from '../composables/useStorage'
-import { sanitizeHtml } from '../utils/sanitizeHtml'
-import { encodeBasicEntities as escapeHtml } from '../utils/htmlEntities'
+import { useRegexWorker } from '../composables/useRegexWorker'
+import { MAX_MATCHES } from '../utils/regexRunner'
 
 const { copyText } = useClipboard()
 const { showToast } = useToast()
 const { addHistory } = useHistory()
+const { run } = useRegexWorker()
+
+const FLAG_OPTIONS = [
+  { value: 'g', label: '全局(g)' },
+  { value: 'i', label: '不区分大小写(i)' },
+  { value: 'm', label: '多行(m)' },
+  { value: 's', label: '点匹配换行(s)' },
+  { value: 'u', label: 'Unicode(u)' },
+]
+const INPUT_DEBOUNCE_MS = 150
 
 const pattern = ref('')
 const flags = ref(['g'])
 const testText = ref('')
-const output = ref('')
-const error = ref('')
-const matches = ref([])
 const replaceText = ref('')
+const error = ref('')
+const running = ref(false)
+const result = ref(null)
+// 输出区展示的内容：highlight = 高亮原文，replace = 替换结果
+const outputMode = ref('highlight')
 
-const safeHighlightedOutput = computed(() => {
-  if (!output.value.includes('<mark>')) return ''
-  return sanitizeHtml(output.value)
+const flagString = computed(() => FLAG_OPTIONS.map((f) => f.value).filter((f) => flags.value.includes(f)).join(''))
+const matches = computed(() => result.value?.matches ?? [])
+const summary = computed(() => {
+  if (!result.value) return ''
+  const count = matches.value.length
+  if (!count) return '未找到匹配项'
+  return `找到 ${count}${result.value.truncated ? '+' : ''} 个匹配项${result.value.truncated ? `（仅列出前 ${MAX_MATCHES} 个）` : ''}`
+})
+const hasGroups = (match) => match.groups.length > 0
+
+const execute = async ({ withReplace = false } = {}) => {
+  // 只判断是否为空，允许测试 \s 这类只匹配空白的正则
+  if (!pattern.value || !testText.value) {
+    result.value = null
+    error.value = ''
+    return null
+  }
+  running.value = true
+  try {
+    const next = await run({
+      pattern: pattern.value,
+      flags: flagString.value,
+      text: testText.value,
+      replacement: replaceText.value,
+      withReplace,
+    })
+    result.value = next
+    error.value = ''
+    return next
+  } catch (err) {
+    if (err?.name === 'AbortError') return null
+    result.value = null
+    error.value = err?.name === 'TimeoutError' ? err.message : '正则表达式错误：' + err.message
+    return null
+  } finally {
+    running.value = false
+  }
+}
+
+let debounceTimer = null
+const clearDebounce = () => {
+  clearTimeout(debounceTimer)
+  debounceTimer = null
+}
+
+// 输入时自动匹配（防抖）；按钮触发的立即执行
+watch([pattern, flagString, testText], () => {
+  clearDebounce()
+  if (outputMode.value === 'replace') outputMode.value = 'highlight'
+  debounceTimer = setTimeout(() => execute(), INPUT_DEBOUNCE_MS)
 })
 
-const buildRegex = (extraFlags = '') => {
-  const flagStr = flags.value.join('')
-  const merged = [...new Set((flagStr + extraFlags).split(''))].join('')
-  return new RegExp(pattern.value, merged)
-}
+onBeforeUnmount(clearDebounce)
 
 const testRegex = () => {
-  if (!pattern.value.trim() || !testText.value.trim()) {
-    output.value = ''
-    matches.value = []
-    error.value = ''
-    return
-  }
-
-  try {
-    error.value = ''
-    // 列出全部匹配时始终按全局匹配枚举，避免未勾选 g 时 match() 把捕获组当成“匹配项”展示
-    const regex = buildRegex('g')
-    const allMatches = []
-    for (const match of testText.value.matchAll(regex)) {
-      allMatches.push(match[0])
-      if (allMatches.length >= 1000) break
-    }
-
-    if (allMatches.length) {
-      matches.value = allMatches
-      output.value = `找到 ${allMatches.length}${allMatches.length >= 1000 ? '+' : ''} 个匹配项`
-    } else {
-      matches.value = []
-      output.value = '未找到匹配项'
-    }
-  } catch (err) {
-    error.value = '正则表达式错误：' + err.message
-    output.value = ''
-    matches.value = []
-  }
+  clearDebounce()
+  return execute()
 }
 
-const replace = () => {
-  if (!pattern.value.trim() || !testText.value.trim()) {
+const highlightMatches = async () => {
+  outputMode.value = 'highlight'
+  await testRegex()
+}
+
+const replace = async () => {
+  if (!pattern.value || !testText.value) {
     showToast('请输入正则表达式和要替换的文本', 'info')
     return
   }
-
-  try {
-    error.value = ''
-    const regex = buildRegex()
-    const result = testText.value.replace(regex, replaceText.value)
-    output.value = result
-    addHistory('正则替换', result)
-    copyToClipboard(result)
-  } catch (err) {
-    error.value = '替换失败：' + err.message
-    output.value = ''
-  }
-}
-
-const highlightMatches = () => {
-  if (!pattern.value.trim() || !testText.value.trim()) {
-    return
-  }
-
-  try {
-    error.value = ''
-    const regex = buildRegex('g')
-    let result = ''
-    let lastIndex = 0
-    let match
-    while ((match = regex.exec(testText.value)) !== null) {
-      result += escapeHtml(testText.value.slice(lastIndex, match.index))
-      result += '<mark>' + escapeHtml(match[0]) + '</mark>'
-      lastIndex = match.index + match[0].length
-      if (match[0].length === 0) {
-        regex.lastIndex++
-      }
-    }
-    result += escapeHtml(testText.value.slice(lastIndex))
-    output.value = result
-  } catch (err) {
-    error.value = '高亮失败：' + err.message
-  }
+  clearDebounce()
+  const next = await execute({ withReplace: true })
+  if (!next) return
+  outputMode.value = 'replace'
+  addHistory('正则替换', next.replaced)
+  copyToClipboard(next.replaced)
 }
 
 const copyToClipboard = (text) => copyText(text, { history: '正则工具' })
 
 const clearAll = () => {
+  clearDebounce()
   pattern.value = ''
   testText.value = ''
-  output.value = ''
-  error.value = ''
-  matches.value = []
   replaceText.value = ''
+  error.value = ''
+  result.value = null
+  outputMode.value = 'highlight'
 }
 </script>
 
 <template>
   <div class="regex-tools">
     <h2>正则表达式工具</h2>
-    <p class="description">测试和替换正则表达式</p>
+    <p class="description">测试和替换正则表达式（在独立线程中执行，回溯过久会自动中止）</p>
 
-    <div v-if="error" class="error-message">{{ error }}</div>
+    <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
     <div class="input-section">
       <div class="form-group">
-        <label>正则表达式</label>
+        <label for="regex-pattern">正则表达式</label>
         <div class="regex-input-group">
           <input
+            id="regex-pattern"
             v-model="pattern"
-            @input="testRegex"
             placeholder="输入正则表达式，如：\d+"
             class="regex-input"
+            spellcheck="false"
+            autocomplete="off"
           />
           <div class="flags">
-            <label class="flag-label">
-              <input
-                v-model="flags"
-                type="checkbox"
-                value="g"
-                @change="testRegex"
-              />
-              全局(g)
-            </label>
-            <label class="flag-label">
-              <input
-                v-model="flags"
-                type="checkbox"
-                value="i"
-                @change="testRegex"
-              />
-              不区分大小写(i)
-            </label>
-            <label class="flag-label">
-              <input
-                v-model="flags"
-                type="checkbox"
-                value="m"
-                @change="testRegex"
-              />
-              多行(m)
+            <label v-for="flag in FLAG_OPTIONS" :key="flag.value" class="flag-label">
+              <input v-model="flags" type="checkbox" :value="flag.value" />
+              {{ flag.label }}
             </label>
           </div>
         </div>
       </div>
 
       <div class="form-group">
-        <label>测试文本</label>
+        <label for="regex-text">测试文本</label>
         <textarea
+          id="regex-text"
           v-model="testText"
-          @input="testRegex"
           placeholder="输入要测试的文本"
           class="input-textarea"
+          spellcheck="false"
         ></textarea>
       </div>
 
       <div class="form-group">
-        <label>替换内容</label>
+        <label for="regex-replace">替换内容</label>
         <input
+          id="regex-replace"
           v-model="replaceText"
-          placeholder="输入替换文本（点击替换按钮执行）"
+          placeholder="输入替换文本，支持 $1、$<name>（点击替换按钮执行）"
           class="regex-input"
+          spellcheck="false"
         />
       </div>
     </div>
@@ -194,23 +178,35 @@ const clearAll = () => {
       <button @click="clearAll" class="btn btn-secondary">清空</button>
     </div>
 
-    <div v-if="output || matches.length > 0" class="results-section">
+    <div v-if="result" class="results-section" :aria-busy="running">
+      <p class="summary" role="status">{{ summary }}</p>
+
       <div v-if="matches.length > 0" class="matches-list">
         <h3>匹配结果</h3>
         <div class="match-items">
-          <div v-for="(match, index) in matches" :key="index" class="match-item">
+          <div v-for="(match, index) in matches" :key="`${match.index}-${index}`" class="match-item">
             <span class="match-index">{{ index + 1 }}.</span>
-            <code class="match-text">{{ match }}</code>
+            <code class="match-text">{{ match.text || '(空匹配)' }}</code>
+            <span class="match-pos">@{{ match.index }}</span>
+            <span v-if="hasGroups(match)" class="match-groups">
+              <code v-for="(group, gi) in match.groups" :key="gi" class="group-chip">
+                ${{ gi + 1 }}={{ group ?? 'undefined' }}
+              </code>
+              <template v-if="match.named">
+                <code v-for="(value, name) in match.named" :key="name" class="group-chip named">
+                  {{ name }}={{ value ?? 'undefined' }}
+                </code>
+              </template>
+            </span>
           </div>
         </div>
       </div>
 
-      <div v-if="output" class="output-section">
-        <h3>输出</h3>
+      <div class="output-section">
+        <h3>{{ outputMode === 'replace' ? '替换结果' : '高亮预览' }}</h3>
         <div class="output-content">
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <div v-if="safeHighlightedOutput" class="html-render" v-html="safeHighlightedOutput"></div>
-          <code v-else class="output-text">{{ output }}</code>
+          <code v-if="outputMode === 'replace'" class="output-text">{{ result.replaced }}</code>
+          <div v-else class="html-render"><template v-for="(segment, i) in result.segments" :key="i"><mark v-if="segment.match">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></div>
         </div>
       </div>
     </div>
@@ -391,6 +387,7 @@ h2 {
   border-radius: 6px;
   padding: 0.75rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
@@ -428,6 +425,42 @@ h2 {
   font-size: 0.9rem;
   color: #333;
   word-break: break-all;
+  /* 保留测试文本中的换行与缩进 */
+  white-space: pre-wrap;
+}
+
+.summary {
+  margin: 0 0 1rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.match-pos {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+.match-groups {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.group-chip {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  word-break: break-all;
+}
+
+.group-chip.named {
+  border-color: #ffb74d;
 }
 
 mark {
@@ -451,90 +484,90 @@ mark {
   }
 }
 
-:global([data-theme='dark'] h2) {
+:root[data-theme='dark'] h2 {
   color: #ffb84d;
 }
 
-:global([data-theme='dark'] .description) {
+:root[data-theme='dark'] .description {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .error-message) {
+:root[data-theme='dark'] .error-message {
   background-color: #4a2a2a;
   color: #ff6b6b;
   border-left-color: #ff6b6b;
 }
 
-:global([data-theme='dark'] .form-group label) {
+:root[data-theme='dark'] .form-group label {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .regex-input) {
+:root[data-theme='dark'] .regex-input {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664a33;
 }
 
-:global([data-theme='dark'] .regex-input:focus) {
+:root[data-theme='dark'] .regex-input:focus {
   background-color: #333;
   border-color: #ffb84d;
   box-shadow: 0 0 0 3px rgba(255, 165, 2, 0.1);
 }
 
-:global([data-theme='dark'] .flag-label) {
+:root[data-theme='dark'] .flag-label {
   color: #a0a0a0;
 }
 
-:global([data-theme='dark'] .input-textarea) {
+:root[data-theme='dark'] .input-textarea {
   background-color: #2a2a3e;
   color: #e0e0e0;
   border-color: #664a33;
 }
 
-:global([data-theme='dark'] .input-textarea:focus) {
+:root[data-theme='dark'] .input-textarea:focus {
   background-color: #333;
   border-color: #ffb84d;
   box-shadow: 0 0 0 3px rgba(255, 165, 2, 0.1);
 }
 
-:global([data-theme='dark'] .btn-secondary) {
+:root[data-theme='dark'] .btn-secondary {
   background-color: #404050;
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .btn-secondary:hover) {
+:root[data-theme='dark'] .btn-secondary:hover {
   background-color: #505060;
 }
 
-:global([data-theme='dark'] .matches-list h3),
-:global([data-theme='dark'] .output-section h3) {
+:root[data-theme='dark'] .matches-list h3,
+:root[data-theme='dark'] .output-section h3 {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .match-item) {
+:root[data-theme='dark'] .match-item {
   background: linear-gradient(135deg, #3a2a1e, #3a3a2e);
   border-color: #664a33;
 }
 
-:global([data-theme='dark'] .match-text) {
+:root[data-theme='dark'] .match-text {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] .output-section) {
+:root[data-theme='dark'] .output-section {
   background: linear-gradient(135deg, #3a2a1e, #3a3a2e);
   border-color: #664a33;
 }
 
-:global([data-theme='dark'] .output-content) {
+:root[data-theme='dark'] .output-content {
   background-color: #333;
 }
 
-:global([data-theme='dark'] .output-text),
-:global([data-theme='dark'] .html-render) {
+:root[data-theme='dark'] .output-text,
+:root[data-theme='dark'] .html-render {
   color: #e0e0e0;
 }
 
-:global([data-theme='dark'] mark) {
+:root[data-theme='dark'] mark {
   background-color: #666600;
   color: #ffff99;
 }

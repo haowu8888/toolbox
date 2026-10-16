@@ -196,7 +196,7 @@ h2 {
   font-size: 1.8em;
 }
 
-:global([data-theme='dark']) h2 {
+:root[data-theme='dark'] h2 {
   color: #a1887f;
 }
 
@@ -249,7 +249,7 @@ h2 {
   border-left: 4px solid #c33;
 }
 
-:global([data-theme='dark']) .error-message {
+:root[data-theme='dark'] .error-message {
   color: #ff8a8a;
   border-left-color: #ff8a8a;
 }
@@ -384,7 +384,7 @@ h2 {
   font-size: 1.1em;
 }
 
-:global([data-theme='dark']) .quick-reference h3 {
+:root[data-theme='dark'] .quick-reference h3 {
   color: #a1887f;
 }
 
@@ -424,7 +424,7 @@ h2 {
   text-align: center;
 }
 
-:global([data-theme='dark']) .entity-char {
+:root[data-theme='dark'] .entity-char {
   color: #a1887f;
 }
 
